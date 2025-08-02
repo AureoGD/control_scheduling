@@ -1,0 +1,73 @@
+
+
+<?xml version="1.0"?>
+<robot name="inve_pendulum">
+
+  <material name="blue">
+    <color rgba="0.2 0.5 0.8 1.0"/>
+  </material>
+  <material name="grey">
+    <color rgba="0.6 0.6 0.6 1.0"/>
+  </material>
+
+  <link name="world"/>
+
+  <joint name="slider_to_cart" type="prismatic">
+    <parent link="world"/>
+    <child link="cart"/>
+    <axis xyz="1 0 0"/>
+    <limit lower="-100" upper="100" effort="3.0" velocity="3.0"/>
+  </joint>
+
+  <link name="cart">
+    <visual>
+      <geometry>
+        <box size="0.3 0.1 0.05"/>
+      </geometry>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+      <material name="blue"/>
+    </visual>
+    <collision>
+      <geometry>
+        <box size="0.3 0.1 0.05"/>
+      </geometry>
+      <origin rpy="0 0 0" xyz="0 0 0"/>
+    </collision>
+    <inertial>
+      <mass value="0.6650"/>
+      <inertia ixx="0.01" ixy="0" ixz="0" iyy="0.01" iyz="0" izz="0.01"/>
+    </inertial>
+  </link>
+
+  <link name="pole">
+    <visual>
+      <geometry>
+        <cylinder length="0.61" radius="0.02"/>
+      </geometry>
+      <origin rpy="0 0 0" xyz="0 0 0.305"/>
+      <material name="grey"/>
+    </visual>
+    <collision>
+      <geometry>
+        <cylinder length="0.61" radius="0.02"/>
+      </geometry>
+      <origin rpy="0 0 0" xyz="0 0 0.305"/>
+    </collision>
+    <inertial>
+      <mass value="0.21"/>
+      <inertia ixx="0.026" ixy="0" ixz="0" iyy="0.026" iyz="0" izz="0.001"/>
+      <origin rpy="0 0 0" xyz="0 0 0.305"/>
+    </inertial>
+  </link>
+
+  <joint name="cart_to_rod" type="continuous">
+    <parent link="cart"/>
+    <child link="pole"/>
+    <origin xyz="0 0 0.025"/>
+    <!-- <origin xyz="0.0 0.175 0.075"/> -->
+    <axis xyz="0 1 0"/>
+    <limit lower="-3.1415" upper="3.1415" effort="0" velocity="10.0"/>
+  </joint>
+
+</robot> 
+
