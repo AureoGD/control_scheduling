@@ -108,6 +108,7 @@ class InvPendulumEnv(gym.Env):
     def _done(self):
         if self.current_step >= self.max_step:
             return True
+        return False
 
     def _norm(self, states):
         x = states[0] / self.inv_pendulum.x_max
