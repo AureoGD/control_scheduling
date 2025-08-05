@@ -9,7 +9,12 @@ import time
 
 class InvPendulumEnv(gym.Env):
 
-    def __init__(self, env_id=None, dt=0.002, max_step=5000, rendering=False, frame_rate=30):
+    def __init__(self,
+                 env_id=None,
+                 dt=0.002,
+                 max_step=5000,
+                 rendering=False,
+                 frame_rate=30):
         super().__init__()
         self.env_id = env_id
         self.rendering = rendering
@@ -22,21 +27,32 @@ class InvPendulumEnv(gym.Env):
         if self.rendering:
             self.pendulum_renderer = PendulumLiveRenderer(self.inv_pendulum)
 
-        self.action_space = gym.spaces.Box(low=-1, high=1, shape=(1, ), dtype=np.float32)
+        self.action_space = gym.spaces.Box(low=-1,
+                                           high=1,
+                                           shape=(1, ),
+                                           dtype=np.float32)
         # For now, a simple observation space. The satates must be normalized
-        self.observation_space = gym.spaces.Box(low=-1, high=1, shape=(5, ), dtype=np.float32)
+        self.observation_space = gym.spaces.Box(low=-1,
+                                                high=1,
+                                                shape=(5, ),
+                                                dtype=np.float32)
 
         self.scale_factor = 0.75
         self.ep_reward = 0
         self.current_step = 0
         self.ep = 0
 
+        self.health = 500
+        self.P = np.array([[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 5, 0],
+                           [0, 0, 0, 1]])
+
     def step(self, action):
         self.current_step += 1
         force = self.inv_pendulum.f_max * np.clip(action[0], -1, 1)
         sys_sts = self.inv_pendulum.step_sim(force)
         new_state = self._norm(sys_sts)
-        if self.rendering and (self.current_step % self.frame_rate == 0 or self.current_step == 0):
+        if self.rendering and (self.current_step % self.frame_rate == 0
+                               or self.current_step == 0):
             self.render()
             time.sleep(self.dt * self.frame_rate)
 
@@ -65,7 +81,8 @@ class InvPendulumEnv(gym.Env):
         self.current_step = 0
         self.ep_reward = 0
         x0 = np.array([
-            self.scale_factor * np.random.uniform(-self.inv_pendulum.x_max, self.inv_pendulum.x_max), 0,
+            self.scale_factor * np.random.uniform(-self.inv_pendulum.x_max,
+                                                  self.inv_pendulum.x_max), 0,
             self.scale_factor * np.random.uniform(-np.pi, np.pi), 0
         ])
         state = self._norm(self.inv_pendulum.reset(x0))
@@ -84,8 +101,9 @@ class InvPendulumEnv(gym.Env):
             self.pendulum_renderer.close_render()
 
     def _done(self):
-        if self.current_step >= self.max_step:
+        if self.current_step >= self.max_step or self.health < 0:
             return True
+
         return False
 
     def _norm(self, states):
@@ -98,12 +116,19 @@ class InvPendulumEnv(gym.Env):
         da = states[3] / self.inv_pendulum.da_max
         return np.array([x, dx, cos_a, sin_a, da]).reshape(5, )
 
-    def _reward(sel, state):
+    def _reward(self, state):
         pos = abs(state[0])
         angle_reward = np.cos(state[2])
-        r = -0.0001
-
+        #  Sparse
         if angle_reward >= np.cos(0.2):
             r += 1 + (2 - pos) * 0.5
+
+        # Continuous
+        # if abs(np.cos(state[2])) >= np.cos(0.2):
+        #     r = (1 + (2 - pos) * 0.5) * 0.001
+        # else:
+        #     st = np.array(state)
+        #     r = -0.0001 * (st.T @ self.P @ st)
+        # self.health += r
 
         return r

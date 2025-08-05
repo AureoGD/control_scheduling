@@ -15,11 +15,11 @@ from es_framework.cem_optimizer.cem_optimizer import CEMOptimizer
 from es_framework.commons.control_rule import ControlRule
 
 # --- Experiment Setup ---
-is_discrete = False
+is_discrete = True
 
 # --- CEM Hyperparameters ---
 POPULATION_SIZE = 100
-GENERATIONS = 2500
+GENERATIONS = 1000
 ELITE_FRACTION = 0.4
 INITIAL_STD_DEV = 0.5
 EXTRA_NOISE_SCALE = 0.01
@@ -53,7 +53,10 @@ def main():
         config['is_discrete'] = False
         output_dim = 1
 
-    reference_model = ControlRule(observation_dim=5, output_dim=output_dim, fc1_dim=fc1_dim, fc2_dim=fc2_dim)
+    reference_model = ControlRule(observation_dim=5,
+                                  output_dim=output_dim,
+                                  fc1_dim=fc1_dim,
+                                  fc2_dim=fc2_dim)
     param_dim = flatten_nn_parameters(reference_model).size
 
     cem = CEMOptimizer(param_dim=param_dim,
@@ -69,9 +72,12 @@ def main():
 
     # --- Parallel Setup ---
     num_workers = min(15, POPULATION_SIZE)
-    logger.log_message(f"Starting CEM training with {num_workers} persistent parallel workers.")
+    logger.log_message(
+        f"Starting CEM training with {num_workers} persistent parallel workers."
+    )
     initializer_with_args = partial(init_worker, config=config)
-    pool = multiprocessing.Pool(processes=num_workers, initializer=initializer_with_args)
+    pool = multiprocessing.Pool(processes=num_workers,
+                                initializer=initializer_with_args)
 
     try:
         for gen in range(1, GENERATIONS + 1):
@@ -92,8 +98,12 @@ def main():
             logger.log_generation(generation=gen,
                                   evaluated_population=evaluated_population,
                                   extra_metrics={
-                                      "Mean_StdDev_Params": float(getattr(cem, "mean_std_dev", float('nan'))),
-                                      "Extra_Noise_Scale": getattr(cem, "epsilon", float('nan'))
+                                      "Mean_StdDev_Params":
+                                      float(
+                                          getattr(cem, "mean_std_dev",
+                                                  float('nan'))),
+                                      "Extra_Noise_Scale":
+                                      getattr(cem, "epsilon", float('nan'))
                                   })
 
     except KeyboardInterrupt:
@@ -105,8 +115,10 @@ def main():
         pool.join()
 
         final_weights = cem.get_best_params()
-        final_state_dict = unflatten_nn_parameters(final_weights, reference_model)
-        final_path = os.path.join(logger.models_save_dir, "cem_model_final_mean.pth")
+        final_state_dict = unflatten_nn_parameters(final_weights,
+                                                   reference_model)
+        final_path = os.path.join(logger.models_save_dir,
+                                  "cem_model_final_mean.pth")
         torch.save(final_state_dict, final_path)
         logger.log_message(f"Final CEM mean weights saved to {final_path}")
         logger.close()

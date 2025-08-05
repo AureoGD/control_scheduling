@@ -27,15 +27,22 @@ def init_worker(config: Dict[str, Any]):
 
     if is_discrete:
         from environment.cart_pendulum.env_pendulum_disc import InvPendulumEnv
-        sim_instance = InvPendulumEnv(env_id=process_id, **env_cfg, rendering=False)
+        sim_instance = InvPendulumEnv(env_id=process_id,
+                                      **env_cfg,
+                                      rendering=False)
         output_dim = sim_instance.action_space.n
     else:
         from environment.cart_pendulum.env_pendulum_cont import InvPendulumEnv
-        sim_instance = InvPendulumEnv(env_id=process_id, **env_cfg, rendering=False)
+        sim_instance = InvPendulumEnv(env_id=process_id,
+                                      **env_cfg,
+                                      rendering=False)
         output_dim = sim_instance.action_space.shape[0]
 
     # This part is now fully robust
-    control_rule = ControlRule(observation_dim=sim_instance.observation_space.shape[0], output_dim=output_dim, **control_rule_cfg)
+    control_rule = ControlRule(
+        observation_dim=sim_instance.observation_space.shape[0],
+        output_dim=output_dim,
+        **control_rule_cfg)
 
 
 def run_worker(task_args: Tuple[int, np.ndarray]):
@@ -58,11 +65,13 @@ def run_worker(task_args: Tuple[int, np.ndarray]):
                 obs_tensor = torch.tensor(obs, dtype=torch.float32)
                 if is_discrete:
                     probabilities = control_rule.forward(obs_tensor)
-                    action = torch.argmax(probabilities, dim=-1).detach().numpy()
+                    action = torch.argmax(probabilities,
+                                          dim=-1).detach().numpy()
                 else:
                     action_tensor = control_rule.forward(obs_tensor)
                     action = action_tensor.detach().numpy()
-                obs, reward, terminated, truncated, info = sim_instance.step(action)
+                obs, reward, terminated, truncated, info = sim_instance.step(
+                    action)
                 fitness += reward
                 if terminated or truncated:
                     break
@@ -70,7 +79,8 @@ def run_worker(task_args: Tuple[int, np.ndarray]):
         return task_id, cumulative_fitness / 5
 
     except Exception as e:
-        print(f"[Proc {os.getpid()}, Task {task_id}] ERROR in worker task: {e}")
+        print(
+            f"[Proc {os.getpid()}, Task {task_id}] ERROR in worker task: {e}")
         import traceback
         traceback.print_exc()
         return task_id, -float('inf')
