@@ -13,8 +13,6 @@ from sac_framework.custom_sac.common.logger import Logger
 
 # Set this to True to test the discrete environment
 IS_DISCRETE = False
-# Number of parallel environments
-N_ENVS = 32
 # Steps collected per environment before an update
 N_STEPS = 2048
 # Frequency to save intermediate models (in steps)
@@ -26,7 +24,7 @@ TOTAL_TIMESTEPS = 15_000_000
 # Batch size
 BATCH_SIZE = 64
 # Start training after this many steps to fill the buffer
-START_TRAIN_AFTER = 5_000
+START_TRAIN_AFTER = 10_000
 # Replay buffer size
 REPLAY_BUFFER_SIZE = 50_000
 # Number of evaluation episodes
@@ -49,7 +47,7 @@ random.seed(SEED)
 if IS_DISCRETE:
     from sac_framework.custom_sac.agents.discrete_agent import DiscreteAgent
     from environment.cart_pendulum.env_pendulum_disc import InvPendulumEnv
-    from scheduller_rules.schl_rule1 import SchedullerRule
+    from scheduller_rules.schl_rule2 import SchedullerRule
 
     sw_rule = SchedullerRule()
     env_kwargs = {}
@@ -74,6 +72,7 @@ else:
 
     agent = ContinuousAgent(obs_dim=obs_dim,
                             action_dim=n_actions,
+                            alpha='0.01',
                             device="cuda" if torch.cuda.is_available() else "cpu")
 
 # ---------------------------
@@ -90,9 +89,15 @@ config = {
     "n_eval_episodes": N_EVAL_EPISODES
 }
 
-logger = Logger()
+logger = Logger(is_discrete=IS_DISCRETE)
 
 # ---------------------------
 # TRAINING LOOP
 # ---------------------------
-train_agent(env=env, eval_env=eval_env, agent=agent, buffer=buffer, logger=logger, config=config)
+train_agent(env=env,
+            eval_env=eval_env,
+            agent=agent,
+            buffer=buffer,
+            logger=logger,
+            config=config,
+            buffer_zize=REPLAY_BUFFER_SIZE)

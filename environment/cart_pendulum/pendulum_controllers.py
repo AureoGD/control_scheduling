@@ -1,5 +1,6 @@
 import numpy as np
 from math import sin, cos, pi
+from environment.cart_pendulum.inverted_pendulum_dynamics import InvePendulum
 
 
 class LQR():
@@ -11,7 +12,7 @@ class LQR():
         self.K = np.array(([k1, k2, k3, k4]))
 
     def update_control(self, states):
-        u = self.K @ states
+        u = -self.K @ states
         return u
 
 
@@ -29,10 +30,9 @@ class SlidingMode():
             pendulum_params (object): An object or dict containing the physical
                                       parameters of the pendulum (mc, m, l, br, g).
         """
-        # Control parameters from the paper
-        self.lambda_ = 5.0
-        self.phi = 0.1
-        self.gamma = 20.0
+        self.lambda_ = 10  # 5
+        self.phi = 0.5  #0.05
+        self.gamma = 2.5  #1.5
 
         # Physical parameters of the system to be controlled
         self.mc = pendulum_params.mc
@@ -40,23 +40,25 @@ class SlidingMode():
         self.l = pendulum_params.l
         self.br = pendulum_params.br
         self.g = pendulum_params.g
+        self.d = 0
+        self.J = pendulum_params.J
 
     def update_control(self, states):
         _x, dx, a, da = states
 
         s = da + self.lambda_ * a
 
-        dda_desired = -self.lambda_ * da
+        dda_r = -self.lambda_ * da
         cos_a = cos(a)
 
         # Robust: avoid division by near-zero
         if abs(cos_a) < 1e-3:
-            ddx_required = 0.0
+            ddx_r = 0.0
         else:
-            numerator = 0.5 * self.mr * self.g * sin(a) - (1 / 3) * self.mr * self.l * dda_desired
-            ddx_required = numerator / (self.mr * cos_a * 0.5)
+            num = -(self.J + self.mr * self.l**2) * dda_r + self.mr * self.g * self.l * sin(a)
+            ddx_r = num / (self.mr * self.l * cos(a))
 
-        u_hat = (self.mc * ddx_required + 0.5 * self.mr * self.l * cos_a * dda_desired + self.br * dx - 0.5 * self.mr * self.l * sin(a) * da**2)
+        u_hat = (self.mc + self.mr) * ddx_r + self.mr * self.l * cos(a) * dda_r - self.mr * self.l * sin(a) * da**2 + self.br * dx
 
         u = u_hat + self.gamma * np.clip(s / self.phi, -1, 1)
 
@@ -107,3 +109,53 @@ class SwingUp():
         u = -self.k * E * np.sign(-da)
 
         return u
+
+
+class PendulumStatesPredict(InvePendulum):
+
+    def __init__(self, dt=0.001, disturbance=False):
+        super().__init__(dt, disturbance)
+        self.st_ = None
+        self.disturb_detected = False
+        self.model_mode = None
+
+    def pred_states(self, force, x, dx, a, da):
+        x_, dx_, a_, da_ = x, dx, a, da
+
+        for _ in range(10):
+            I = self.J + self.mr * self.l**2
+            Phi = I * (self.mc + self.mr) - (self.mr * self.l * cos(a_))**2
+            f2 = -self.mr**2 * self.l**2 * da_**2 * sin(a_) * cos(a_) + (self.mr + self.mc) * self.mr * self.g * self.l * sin(a_) + self.mr * self.l * self.br * dx_ * cos(a_) - self.d * (
+                self.mc + self.mr) * da_
+            g2 = -self.mr * self.l * cos(a_)
+            f1 = I * self.mr * self.l * sin(a_) * da_**2 - I * self.br * dx_ - self.mr**2 * self.l**2 * self.g * cos(a_) * sin(a_) + self.mr * self.l * self.d * cos(a_) * da_
+            g1 = I
+            dda = (f2 + g2 * force) / Phi
+            ddx = (f1 + g1 * force) / Phi
+            dx_ = dx_ + ddx * self.dt
+            x_ += dx_ * self.dt
+            da_ += dda * self.dt
+            a_ += da_ * self.dt
+        self.st_ = (x_, dx_, a_, da_)
+
+    def detect_disturbance(self, dx, da):
+        if not self.disturb_detected and abs(self.st_[1] - dx) > 0.01 and abs(self.st_[3] - da) > 0.01:
+            self.disturb_detected = True
+        elif self.disturb_detected and abs(self.st_[1] - dx) < 0.005 and abs(self.st_[3] - da) < 0.005:
+            self.disturb_detected = False
+
+        #  if self.disturb_detected and abs(a)>0.55 -> uncontrolled
+        #  if ucontolled and a = pi ->controlled donward
+        #  if abs(a) < 0.55 controling
+        #  if abs(a) < 0.05 upward
+        #  if upward and abs(x)< 0.05 stabiled
+
+    def model_(self, x, dx, a, da):
+        self.detect_disturbance(self, dx, da)
+        # if self.disturb and abs(a) > 0.55:
+        #     self.model_mode = -1  # uncontrolled
+        # if self.model_mode == -1 and abs(a) == np.pi and abs(dx) <= 1e-3 and abs(da) <= 1e-3 and abs(x) <= 1e-3:
+        #     self.model_mode = -0.5  # controlled donward
+
+    def reset(self):
+        self.disturb_detected = False

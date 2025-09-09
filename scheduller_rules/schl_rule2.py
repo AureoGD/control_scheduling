@@ -7,18 +7,20 @@ class SchedullerRule(SchedullerRule):
 
     def __init__(self):
         self.ip = InvePendulum()
-        self.lqr = LQR(-2.91, -3.67, -25.43, -4.94)  # Q = [5 1 10 1] R = 0.5
-        self.vf = LQR(0, -33.90, -153.30, -32.07)  # Q = [1e-6 59.50 10 5] R = 0.01
+        self.lqr = LQR(10.0, 12.60, 48.33, 9.09)
         self.sm = SlidingMode(self.ip)
-
-        self.n_controllers = 3
+        self.vf = LQR(0, 30.92, 87.63, 20.40)
+        self.swup = SwingUp(self.ip)
+        self.n_controllers = 4
 
     def update_control_action(self, controller_index, state):
         if controller_index == 0:
-            return self.sm.update_control(state)
-        elif controller_index == 1:
-            return self.vf.update_control(state)
-        elif controller_index == 2:
             return self.lqr.update_control(state)
+        elif controller_index == 1:
+            return self.sm.update_control(state)
+        elif controller_index == 2:
+            return self.vf.update_control(state)
+        elif controller_index == 3:
+            return self.swup.update_control(state)
         else:
             return 0

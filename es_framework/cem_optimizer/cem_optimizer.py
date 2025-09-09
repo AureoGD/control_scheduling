@@ -23,6 +23,7 @@ class CEMOptimizer:
 
         self.mean = np.zeros(param_dim, dtype=np.float32)
         self.std_devs = np.full(param_dim, initial_std_dev, dtype=np.float32)
+        self.mean_std_devs = 0
 
         self.update_rule_type = update_rule_type
         self.elite_weighting_type = elite_weighting_type
@@ -45,7 +46,8 @@ class CEMOptimizer:
 
         population = []
         for _ in range(self.population_size):
-            individual_params = self.mean + self.std_devs * np.random.randn(self.param_dim).astype(np.float32)
+            individual_params = self.mean + self.std_devs * np.random.randn(
+                self.param_dim).astype(np.float32)
             population.append(individual_params)
         return population
 
@@ -57,15 +59,20 @@ class CEMOptimizer:
             ranks = np.arange(1, self.num_elites + 1)
             raw_weights = np.log(self.num_elites + 1) - np.log(ranks)
             if np.sum(raw_weights) <= 0:
-                return np.full(self.num_elites, 1.0 / self.num_elites, dtype=np.float32)
+                return np.full(self.num_elites,
+                               1.0 / self.num_elites,
+                               dtype=np.float32)
 
             weights = raw_weights / np.sum(raw_weights)
             return weights.astype(np.float32)
         else:
             # "each individual is given the same importance"
-            return np.full(self.num_elites, 1.0 / self.num_elites, dtype=np.float32)
+            return np.full(self.num_elites,
+                           1.0 / self.num_elites,
+                           dtype=np.float32)
 
-    def update_distribution(self, evaluated_population: List[Tuple[np.ndarray, float]]):
+    def update_distribution(self, evaluated_population: List[Tuple[np.ndarray,
+                                                                   float]]):
         """
         Upddate the weights distribution.
         
@@ -74,9 +81,12 @@ class CEMOptimizer:
         """
 
         evaluated_population.sort(key=lambda x: x[1], reverse=True)
-        elite_individuals_params = [ind[0] for ind in evaluated_population[:self.num_elites]]
+        elite_individuals_params = [
+            ind[0] for ind in evaluated_population[:self.num_elites]
+        ]
 
-        elite_params_array = np.array(elite_individuals_params, dtype=np.float32)
+        elite_params_array = np.array(elite_individuals_params,
+                                      dtype=np.float32)
 
         # Calculate elite weights (lambda_i)
         lambda_ = self._calculate_elite_weights()
@@ -104,9 +114,11 @@ class CEMOptimizer:
         self.epsilon = max(self.epsilon, self.min_std_dev)
 
         best_fitness_this_gen = evaluated_population[0][1]
-        print(f"CEM Distribution Updated. Best Fitness: {best_fitness_this_gen:.4f}, "
-              f"Mean StdDev: {np.mean(self.std_devs):.6f}, "
-              f"Current Extra Noise Scale: {self.epsilon:.6f}")
+        self.mean_std_devs = np.mean(self.std_devs)
+        print(
+            f"CEM Distribution Updated. Best Fitness: {best_fitness_this_gen:.4f}, "
+            f"Mean StdDev: {self.mean_std_devs:.6f}, "
+            f"Current Extra Noise Scale: {self.epsilon:.6f}")
 
     def get_best_params(self) -> np.ndarray:
         return self.mean

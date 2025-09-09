@@ -6,18 +6,20 @@ from stable_baselines3 import PPO
 from stable_baselines3.common.env_util import make_vec_env
 from stable_baselines3.common.callbacks import EvalCallback, CheckpointCallback
 
+from sb3_framework.curriculum_callback import CurriculumByPerformance
+
 # Set this to True to test the discrete environment
-IS_DISCRETE = True
+IS_DISCRETE = False
 # Number of parallel envirioments
-N_ENVS = 32
+N_ENVS = 4
 # Steps collected per environment before an update
-N_STEPS = 2048
+N_STEPS = 1024
 # Frequency to save intermediate models (in steps)
 CHECKPOINT_FREQ = 100_000
 # Frequency to run evaluation
 EVAL_FREQ = 10_000
 # Total timesteps for training
-TOTAL_TIMESTEPS = 15_000_000
+TOTAL_TIMESTEPS = 100_000_000
 
 # Option to continue training from the latest checkpoint
 CONTINUE_TRAINING = False
@@ -78,6 +80,25 @@ def main(args):
     eval_env = make_vec_env(InvPendulumEnv, n_envs=1, seed=1, env_kwargs=env_kwargs)
 
     # --- 3. Setup Callbacks ---
+    # curriculum_cb = CurriculumCallback(total_timesteps=TOTAL_TIMESTEPS, step=0.025, ramp_portion=0.80)
+
+    curriculum_cb = CurriculumByPerformance(
+        total_timesteps=TOTAL_TIMESTEPS,
+        init_scale=0.10,
+        min_scale=0.10,
+        max_scale=1.00,
+        delta_up=0.10,
+        delta_down=0.05,
+        window_episodes=5_000,
+        trunc_mastery_ratio=0.70,
+        fail_backoff_ratio=0.70,
+        horizon_hint=500,
+        residency_frac=0.05,
+        min_steps_between_changes=0,
+        snap_to_step_grid=True,
+        debug_print=False,
+    )
+
     # Callback for saving the best model
     eval_callback = EvalCallback(
         eval_env,
@@ -127,8 +148,9 @@ def main(args):
         )
 
     print("\nStarting model training...")
+
     model.learn(total_timesteps=TOTAL_TIMESTEPS,
-                callback=[eval_callback, checkpoint_callback],
+                callback=[eval_callback, checkpoint_callback, curriculum_cb],
                 tb_log_name=run_name,
                 reset_num_timesteps=not continue_training)
 

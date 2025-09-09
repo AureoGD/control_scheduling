@@ -23,7 +23,7 @@ def evaluate_agent(env, agent, n_episodes):
     return total_reward / n_episodes
 
 
-def train_agent(env, eval_env, agent, buffer, logger, config):
+def train_agent(env, eval_env, agent, buffer, logger, buffer_zize, config):
     """
     The main training loop for the SAC agent.
 
@@ -70,8 +70,10 @@ def train_agent(env, eval_env, agent, buffer, logger, config):
             ep_rew_history.append(episode_reward)
             ep_len_history.append(episode_len)
 
-            logger.log_scalar("rollout/ep_rew_mean", np.mean(ep_rew_history), step)
-            logger.log_scalar("rollout/ep_len_mean", np.mean(ep_len_history), step)
+            logger.log_scalar("rollout/ep_rew_mean", np.mean(ep_rew_history),
+                              step)
+            logger.log_scalar("rollout/ep_len_mean", np.mean(ep_len_history),
+                              step)
             logger.log_scalar("time/episodes", episodes, step)
 
             obs, _ = env.reset()
@@ -91,15 +93,13 @@ def train_agent(env, eval_env, agent, buffer, logger, config):
 
         # --- Periodic Evaluation and Saving ---
         if (step + 1) % config["eval_freq"] == 0:
-            eval_reward = evaluate_agent(eval_env, agent, config["n_eval_episodes"])
+            eval_reward = evaluate_agent(eval_env, agent,
+                                         config["n_eval_episodes"])
 
             time_elapsed = time.time() - start_time
             fps = (step + 1) / time_elapsed
-
-            # --- IMPLEMENTED CHANGE ---
-            # Added the training reward to the print statement for easy comparison.
-            # Use a default value if the history is empty at the first evaluation.
-            train_reward_mean = np.mean(ep_rew_history) if ep_rew_history else 0.0
+            train_reward_mean = np.mean(
+                ep_rew_history) if ep_rew_history else 0.0
             print("-" * 80)
             print(
                 f"Step: {step+1} | Eval Reward: {eval_reward:.2f} | Train Reward: {train_reward_mean:.2f} | FPS: {fps:.2f}"

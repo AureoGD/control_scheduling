@@ -6,7 +6,7 @@ from environment.cart_pendulum.pendulum_controllers import LQR, SlidingMode
 # --- Configuration ---
 SIMULATION_TIME = 5.0  # seconds
 DT = 0.002
-INITIAL_STATE = np.array([0, 0.0, 0.4, 0.0])
+INITIAL_STATE = np.array([-1.5021892786026, -0.9675477147102356, -0.09422927349805832, 0.9383679032325745])
 
 # Cost function matrix and parameters
 p_mtx = np.array([[1.0, 0.0, 0.0, 0.0], [0.0, 1.0, 0.0, 0.0], [0.0, 0.0, 5.0, 0.0], [0.0, 0.0, 0.0, 1.0]])
@@ -18,11 +18,11 @@ STUCK_PENALTY_FACTOR = 1.0
 
 def eval_cost(state):
     v = state.reshape(4, 1)
-    if abs(v[2,0])< UPRIGHT_ANGLE_THRESHOLD and abs(v[3,0]<UPRIGHT_ANG_VEL_THRESHOLD):
-        b = abs(v[0,0])
+    if abs(v[2, 0]) < UPRIGHT_ANGLE_THRESHOLD and abs(v[3, 0] < UPRIGHT_ANG_VEL_THRESHOLD):
+        b = abs(v[0, 0])
     else:
         b = 0
-    return (v.T @ p_mtx @ v).item()+2*b
+    return (v.T @ p_mtx @ v).item() + 2 * b
 
 
 # --- Simulation Function ---
@@ -67,7 +67,7 @@ def sim(initial_state, controller):
 if __name__ == '__main__':
     # Initialize Environment and All Controllers
     env = InvePendulum(dt=DT)
-    controllers = {"LQR": LQR(10.0, 12.60, 48.33, 9.09), "SM": SlidingMode(env), "VF": LQR(0, 30.92, 87.63, 20.40)}
+    controllers = {"SM": SlidingMode(env), "VF": LQR(0, 30.92, 87.63, 20.40)}
     # controllers = {"LQR": LQR(10.0, 12.60, 48.33, 9.09)}
 
     # Dictionary to store simulation data for each controller
@@ -80,7 +80,12 @@ if __name__ == '__main__':
         costs_to_go[-1] = cost[-1]
         for i in reversed(range(len(cost) - 1)):
             costs_to_go[i] = cost[i] + 0.5 * costs_to_go[i + 1]
-        simulation_data[name] = {'states': states, 'control_effort': control_effort, 'cost': cost, 'cost_to_go': costs_to_go}
+        simulation_data[name] = {
+            'states': states,
+            'control_effort': control_effort,
+            'cost': cost,
+            'cost_to_go': costs_to_go
+        }
 
     # --- Plot Comparative Results ---
     time_vector = np.arange(0, SIMULATION_TIME, DT)
