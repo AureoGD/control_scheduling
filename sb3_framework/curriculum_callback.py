@@ -64,7 +64,7 @@ class CurriculumByPerformance(BaseCallback):
         self,
         *,
         total_timesteps: int,
-        init_scale: float = 0.10,
+        init_scale: float = 0.12,
         max_scale: float = 1.00,
         min_scale: float = 0.10,  # base floor (initial allowed minimum)
         delta_up: float = 0.10,  # level step size

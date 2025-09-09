@@ -4,3 +4,4 @@ models
 logs
 datasets
 analysis
+rate_models/eval_data

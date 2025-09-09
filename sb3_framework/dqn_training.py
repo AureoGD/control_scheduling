@@ -18,7 +18,7 @@ BUFFER_SIZE = 1_000_000
 # Number of steps to collect before starting training
 LEARNING_STARTS = 50_000
 # Batch size for each training update
-BATCH_SIZE = 256
+BATCH_SIZE = 128
 # The soft update coefficient for the target network
 TAU = 0.005
 # Update the model every TRAIN_FREQ steps or episodes

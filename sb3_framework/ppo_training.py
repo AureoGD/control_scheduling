@@ -9,7 +9,7 @@ from stable_baselines3.common.callbacks import EvalCallback, CheckpointCallback
 from sb3_framework.curriculum_callback import CurriculumByPerformance
 
 # Set this to True to test the discrete environment
-IS_DISCRETE = False
+IS_DISCRETE = True
 # Number of parallel envirioments
 N_ENVS = 4
 # Steps collected per environment before an update
