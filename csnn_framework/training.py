@@ -22,15 +22,15 @@ RUN_ID = None  # "13113319" to resume a run
 # Base Directories
 LOGS_BASE_DIR = "logs/csnn"
 MODELS_BASE_DIR = "models/csnn"
-DATASET_DIR = "csnn_framework/datasets"
+DATASET_DIR = "csnn_framework/datasets/19210657"
 
 # Training Parameters
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 BATCH_SIZE = 1024
-LEARNING_RATE = 0.001
+LEARNING_RATE = 0.003
 WEIGHT_DECAY = 1e-5
 EARLY_STOPPING_THRESHOLD = 0.01
-MAX_EPOCHS = 200
+MAX_EPOCHS = 400
 PATIENCE_LIMIT = 30
 DT = 0.001
 
@@ -191,7 +191,7 @@ if __name__ == '__main__':
         model = NNModel().to(DEVICE)
         loss_function = torch.nn.MSELoss()
         optimizer = torch.optim.AdamW(model.parameters(), lr=LEARNING_RATE, weight_decay=WEIGHT_DECAY)
-        scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=10, verbose=True, min_lr=1e-6)
+        scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=10, min_lr=1e-6)
 
         # Checkpoint paths
         checkpoint_path = os.path.join(MODEL_SAVE_DIR, f"{controller_name.lower()}_checkpoint.pth")
@@ -259,7 +259,6 @@ if __name__ == '__main__':
                 patience_counter = 0
                 # Save best model
                 torch.save(model.state_dict(), final_model_path)
-                print(f"✓ New best model: Val loss = {val_loss:.6f}, RMSE = {val_rmse:.3f}")
             else:
                 patience_counter += 1
 
@@ -273,12 +272,12 @@ if __name__ == '__main__':
                       f"Time: {epoch_duration:.2f}s")
 
             # Check stopping conditions
-            if train_loss <= EARLY_STOPPING_THRESHOLD:
-                print(f"✓ Early stopping: Training loss {train_loss:.6f} <= threshold {EARLY_STOPPING_THRESHOLD}")
+            if train_loss <= EARLY_STOPPING_THRESHOLD and epoch > MAX_EPOCHS/4:
+                print(f"Early stopping: Training loss {train_loss:.6f} <= threshold {EARLY_STOPPING_THRESHOLD}")
                 break
 
             if patience_counter >= PATIENCE_LIMIT:
-                print(f"✓ Early stopping: No improvement for {PATIENCE_LIMIT} epochs")
+                print(f"Early stopping: No improvement for {PATIENCE_LIMIT} epochs")
                 break
 
             # Save checkpoint every 25 epochs
@@ -294,9 +293,9 @@ if __name__ == '__main__':
                         'val_loss': val_loss,
                     }, checkpoint_path)
 
-        print(f"✓ Finished training {controller_name}. Best validation loss: {best_val_loss:.6f}")
+        print(f"Finished training {controller_name}. Best validation loss: {best_val_loss:.6f}")
         print(f"Final model saved to: {final_model_path}")
 
     writer.close()
-    print(f"\n✓ Training completed: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    print(f"\nTraining completed: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print(f"All models saved to: {MODEL_SAVE_DIR}")

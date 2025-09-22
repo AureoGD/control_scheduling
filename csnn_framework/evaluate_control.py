@@ -12,12 +12,12 @@ from csnn_framework.plot_sim import SimulationPlotter
 # --- Configuration for Evaluation ---
 
 # Paste the path to the timestamped model directory you want to evaluate.
-MODEL_DIR = "models/csnn/31174103"  #31174103  # Your new model directory with scalers
+MODEL_DIR = "models/csnn/19165411"  #31174103  # Your new model directory with scalers
 # Define the initial state for the simulation [x, dx, a, da].
-START_CONDITION = [0, 0.0, 0.4, 0.0]
+START_CONDITION = [0, 0.0, 0.25, 0.0]
 
 # --- Core Simulation and System Parameters ---
-SIMULATION_TIME = 5.0
+SIMULATION_TIME = 6.0
 DT = 0.001
 SAMPLING_INTERVAL = 1
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -144,7 +144,7 @@ if __name__ == '__main__':
     if not os.path.isdir(MODEL_DIR):
         print(f"Error: The specified model directory does not exist: {MODEL_DIR}")
     else:
-        env = InvePendulum(dt=DT)
+        env = InvePendulum(dt=DT, soft_wall=True)
         # env.x_max = 5
         controllers = {"LQR": LQR(-2.91, -3.67, -25.43, -4.94), "SM": SlidingMode(env), "VF": LQR(0, -33.90, -153.30, -32.07)}
 

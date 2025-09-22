@@ -51,11 +51,11 @@ class SwitchRule():
         # Select the best controller from allowed set
         allowed_costs = {name: j_predictions[name] for name in allowed_controllers}
 
-        if not allowed_costs:
-            # Fallback to minimum cost
-            return min(j_predictions, key=j_predictions.get)
+        # if not allowed_costs:
+        #     # Fallback to minimum cost
+        return min(j_predictions, key=j_predictions.get)
 
-        return min(allowed_costs, key=allowed_costs.get)
+        # return min(allowed_costs, key=allowed_costs.get)
 
     def update_state(self, chosen_controller_name, j_predictions):
         """

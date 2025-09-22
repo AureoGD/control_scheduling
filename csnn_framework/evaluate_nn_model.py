@@ -12,22 +12,22 @@ from csnn_framework.nn_model import NNModel
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # --- Configuration ---
-SIMULATION_TIME = 5.0  # seconds
+SIMULATION_TIME = 2.0  # seconds
 DT = 0.001
-INITIAL_STATE = np.array([0.0, 0, 0.25, 0.0])
+INITIAL_STATE = np.array([1.0, 0, 0.25, 0.0])
 
 # Cost function matrix (MUST match training)
 P_MATRIX = np.array(
     [
-        [1.25, 0.0, 0.0, 0.0],  # x position
+        [2.5, 0.0, 0.0, 0.0],  # x position
         [0.0, 1.0, 0.0, 0.0],  # x velocity
-        [0.0, 0.0, 8.0, 0.0],  # theta angle (PRIORITY - pendulum upright)
+        [0.0, 0.0, 2.0, 0.0],  # theta angle (PRIORITY - pendulum upright)
         [0.0, 0.0, 0.0, 1.0]  # theta velocity
     ],
     dtype=np.float32)
 
-DELTA = 0.5
-MODEL_DIR = "models/csnn/31181649"  # Model directory
+DELTA = 0.6
+MODEL_DIR = "models/csnn/19165411"  # Model directory
 SAVE_DATA_DIR = "csnn_framework/analysis"  # Directory to save analysis data
 
 
@@ -210,8 +210,8 @@ def plot_results(simulation_data, time_vector):
 
     # Plot 1: State Trajectories
     for i, (name, data) in enumerate(simulation_data.items()):
-        axs[0].plot(time_vector, data['states'][:, 2], label=fr'{name} - $\alpha(t)$', color=colors[i], linewidth=2)
-        axs[0].plot(time_vector, data['states'][:, 0], label=fr'{name} - $x(t)$', color=colors[i], linestyle='--', linewidth=2)
+        axs[0].plot(time_vector, data['states'][:, 2], label=fr'{name} - $\alpha(t)$', color=colors[i], linewidth=1)
+        axs[0].plot(time_vector, data['states'][:, 0], label=fr'{name} - $x(t)$', color=colors[i], linestyle='--', linewidth=1)
     axs[0].set_ylabel("State Variables")
     axs[0].legend(loc='upper right')
     axs[0].grid(True, alpha=0.3)
@@ -219,7 +219,7 @@ def plot_results(simulation_data, time_vector):
 
     # Plot 2: Control Effort
     for i, (name, data) in enumerate(simulation_data.items()):
-        axs[1].plot(time_vector, data['control_effort'], label=f'{name}', color=colors[i], linewidth=2)
+        axs[1].plot(time_vector, data['control_effort'], label=f'{name}', color=colors[i], linewidth=1)
     axs[1].set_ylabel("Control Effort (N)")
     axs[1].legend(loc='upper right')
     axs[1].grid(True, alpha=0.3)
@@ -227,7 +227,7 @@ def plot_results(simulation_data, time_vector):
 
     # Plot 3: Immediate Cost (for reference)
     for i, (name, data) in enumerate(simulation_data.items()):
-        axs[2].plot(time_vector, data['immediate_cost'], label=f'{name}', color=colors[i], alpha=0.7, linewidth=1.5)
+        axs[2].plot(time_vector, data['immediate_cost'], label=f'{name}', color=colors[i], alpha=0.7, linewidth=1)
     axs[2].set_ylabel("Immediate Cost")
     axs[2].legend(loc='upper right')
     axs[2].grid(True, alpha=0.3)
@@ -236,9 +236,9 @@ def plot_results(simulation_data, time_vector):
     # Plot 4: Cost-to-Go Comparison (THE IMPORTANT ONE)
     for i, (name, data) in enumerate(simulation_data.items()):
         # True cost-to-go
-        axs[3].plot(time_vector, data['cost_to_go'], label=f'{name}_true', color=colors[i], linestyle='-', linewidth=3, alpha=0.8)
+        axs[3].plot(time_vector, data['cost_to_go'], label=f'{name}_true', color=colors[i], linestyle='-', linewidth=1, alpha=0.8)
         # Predicted cost-to-go
-        axs[3].plot(time_vector, data['cost_pred'], label=f'{name}_predicted', color=colors2[i], linestyle='-', linewidth=2, alpha=0.8)
+        axs[3].plot(time_vector, data['cost_pred'], label=f'{name}_predicted', color=colors2[i], linestyle='-', linewidth=1, alpha=0.8)
 
     axs[3].set_ylabel("Cost-to-Go J(x)")
     axs[3].set_xlabel("Time (s)")
@@ -257,7 +257,8 @@ def main():
 
     # Initialize controllers
     env = InvePendulum(dt=DT)
-    controllers = {"LQR": LQR(-2.91, -3.67, -25.43, -4.94), "SM": SlidingMode(env), "VF": LQR(0, -33.90, -153.30, -32.07)}
+#    "SM": SlidingMode(env), "VF": LQR(0, -33.90, -153.30, -32.07,) "LQR": LQR(-2.91, -3.67, -25.43, -4.94)
+    controllers = {"SM": SlidingMode(env),"VF": LQR(0, -33.90, -153.30, -32.07,), "LQR": LQR(-2.91, -3.67, -25.43, -4.94)}
 
     # Test each controller
     simulation_data = {}

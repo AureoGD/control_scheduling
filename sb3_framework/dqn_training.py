@@ -8,11 +8,12 @@ from stable_baselines3.common.callbacks import EvalCallback, CheckpointCallback
 
 # Import the discrete environment directly
 from environment.cart_pendulum.env_pendulum_disc import InvPendulumEnv
+from sb3_framework.curriculum_callback import CurriculumByPerformance
 from scheduller_rules.schl_rule1 import SchedullerRule
 
 # --- DQN Hyperparameters ---
 # Number of parallel environments
-N_ENVS = 1
+N_ENVS =  16
 # Size of the replay buffer
 BUFFER_SIZE = 1_000_000
 # Number of steps to collect before starting training
@@ -36,7 +37,7 @@ CHECKPOINT_FREQ = 1_000_000
 # Frequency to run evaluation
 EVAL_FREQ = 10_000
 # Total timesteps for training
-TOTAL_TIMESTEPS = 50_000_000
+TOTAL_TIMESTEPS = 100_000_000
 
 # Option to continue training from the latest checkpoint
 CONTINUE_TRAINING = False
@@ -87,6 +88,24 @@ def main(args):
 
     # --- 3. Setup Callbacks ---
     # Callback for saving the best model
+    curriculum_cb = CurriculumByPerformance(
+        total_timesteps=TOTAL_TIMESTEPS,
+        init_scale=0.10,
+        min_scale=0.10,
+        max_scale=1.00,
+        delta_up=0.10,
+        delta_down=0.05,
+        window_episodes=5_000,
+        dqn_eps_bump=0.2,
+        trunc_mastery_ratio=0.70,
+        fail_backoff_ratio=0.70,
+        horizon_hint=500,
+        residency_frac=0.05,
+        min_steps_between_changes=0,
+        snap_to_step_grid=True,
+        debug_print=False,
+    )
+
     eval_callback = EvalCallback(
         eval_env,
         best_model_save_path=run_dir,
@@ -139,7 +158,7 @@ def main(args):
 
     print("\nStarting model training...")
     model.learn(total_timesteps=TOTAL_TIMESTEPS,
-                callback=[eval_callback, checkpoint_callback],
+                callback=[eval_callback, checkpoint_callback, curriculum_cb],
                 tb_log_name=run_name,
                 reset_num_timesteps=not continue_training)
 

@@ -4,6 +4,8 @@ import random
 import numpy as np
 import pandas as pd
 from tqdm import tqdm
+from datetime import datetime
+import json
 from environment.cart_pendulum.inverted_pendulum_dynamics import InvePendulum
 from environment.cart_pendulum.pendulum_controllers import LQR, SlidingMode
 
@@ -18,14 +20,14 @@ np.random.seed(GLOBAL_SEED)
 torch.manual_seed(GLOBAL_SEED)
 
 # Cost function parameters
-DELTA = 0.5  # Discount factor
+DELTA = 0.5 # Discount factor
 
 # PROPERLY SCALED Cost matrix - CRITICAL FOR MEANINGFUL COSTS
 P_MATRIX = np.array(
     [
-        [1.25, 0.0, 0.0, 0.0],  # x position
+        [1.0, 0.0, 0.0, 0.0],  # x position
         [0.0, 1.0, 0.0, 0.0],  # x velocity
-        [0.0, 0.0, 8.0, 0.0],  # theta angle (PRIORITY - pendulum upright)
+        [0.0, 0.0, 5.0, 0.0],  # theta angle (PRIORITY - pendulum upright)
         [0.0, 0.0, 0.0, 1.0]  # theta velocity
     ],
     dtype=np.float32)
@@ -33,14 +35,17 @@ P_MATRIX = np.array(
 # Data Generation
 NUM_TRAJECTORIES = 5000
 MAX_SIMULATION_TIME = 4.0  # seconds
-MAX_SIMULATION_STEPS = int(MAX_SIMULATION_TIME / (10 * DT))
+MAX_SIMULATION_STEPS = int(MAX_SIMULATION_TIME / (DT*10) ) # Use actual DT, not 10*DT
 RECORD_EVERY_N_STEPS = 5  # Downsample recording
+STABILITY_THRESHOLD = 1000  # Number of consecutive stable steps to early terminate
+STABILITY_TOLERANCE = 0.01  # Threshold for considering state stable
 
 # System constraints (for realistic sampling)
-X_MAX = 2.0
-X_DOT_MAX = 3.0
-THETA_MAX = 0.5  # ~28.6 degrees
-THETA_DOT_MAX = 8.0
+X_MAX = 1.95
+X_DOT_MAX = 2.75
+THETA_MAX = 0.4  # ~28.6 degrees
+THETA_DOT_MAX = 1.5
+
 
 
 def calculate_quadratic_cost(state, p_matrix):
@@ -51,7 +56,7 @@ def sample_initial_conditions(n):
     inits = []
     for _ in range(n):
         x = random.uniform(-X_MAX * 0.9, X_MAX * 0.9)
-        dx = random.uniform(-X_DOT_MAX * 0.8, X_DOT_MAX * 0.8)
+        dx = random.uniform(-X_DOT_MAX, X_DOT_MAX)
         theta = random.uniform(-THETA_MAX, THETA_MAX)
         dtheta = random.uniform(-THETA_DOT_MAX, THETA_DOT_MAX)
         inits.append(np.array([x, dx, theta, dtheta], dtype=np.float32))
@@ -69,6 +74,17 @@ def ensure_numpy_array(state):
         raise ValueError(f"Unknown state type: {type(state)}")
 
 
+def is_state_stable(state, last_state, tolerance=STABILITY_TOLERANCE):
+    """Check if state is near origin within tolerance."""
+    if last_state is None: last_state = state
+    delta_state = state-last_state
+    last_state = state
+    return (abs(delta_state[0]) < tolerance and  # x position
+            abs(delta_state[1]) < tolerance and  # x velocity
+            abs(delta_state[2]) < tolerance and  # theta angle
+            abs(delta_state[3]) < tolerance), last_state     # theta velocity
+
+
 def simulate_trajectory(env, controller, initial_state, max_steps):
     # Reset environment and ensure state is numpy array
     state_obj = env.reset(initial_state=initial_state.copy())
@@ -77,7 +93,8 @@ def simulate_trajectory(env, controller, initial_state, max_steps):
     recorded_states = []
     recorded_costs = []
     is_stable = True
-
+    stable_steps_count = 0
+    last_state = None
     for step in range(max_steps):
         # Get control action
         action = controller.update_control(state)
@@ -92,12 +109,24 @@ def simulate_trajectory(env, controller, initial_state, max_steps):
         next_state_obj = env.step_sim(action)
         state = ensure_numpy_array(next_state_obj)
 
+        # Check if state is stable
+        stable, last_state = is_state_stable(state, last_state)
+        if stable:
+            stable_steps_count += 1
+        else:
+            stable_steps_count = 0
+
+        # Early termination if system has been stable for enough steps
+        if stable_steps_count >= STABILITY_THRESHOLD:
+            is_stable = True
+            break
+
         # Check for failure (pendulum fell)
         if abs(state[2]) > THETA_MAX * 1.1:
             is_stable = False
             break
 
-    return recorded_states, recorded_costs, is_stable
+    return recorded_states, recorded_costs, is_stable, stable_steps_count
 
 
 def calculate_cost_to_go(immediate_costs, delta):
@@ -114,8 +143,30 @@ def calculate_cost_to_go(immediate_costs, delta):
     return costs_to_go
 
 
-def analyze_controller_dataset(df, controller_name):
+def save_parameters(run_dir, p_matrix, delta, stability_threshold, stability_tolerance):
+    """Save all parameters to a JSON file."""
+    params = {
+        'P_matrix': p_matrix.tolist(),
+        'delta': delta,
+        'stability_threshold': stability_threshold,
+        'stability_tolerance': stability_tolerance,
+        'x_max': X_MAX,
+        'x_dot_max': X_DOT_MAX,
+        'theta_max': THETA_MAX,
+        'theta_dot_max': THETA_DOT_MAX,
+        'dt': DT,
+        'num_trajectories': NUM_TRAJECTORIES,
+        'max_simulation_time': MAX_SIMULATION_TIME,
+        'record_every_n_steps': RECORD_EVERY_N_STEPS,
+        'seed': GLOBAL_SEED
+    }
+    
+    params_path = os.path.join(run_dir, "parameters.json")
+    with open(params_path, 'w') as f:
+        json.dump(params, f, indent=2)
 
+
+def analyze_controller_dataset(df, controller_name):
     print(f"\n=== {controller_name} DATASET ANALYSIS ===")
     print(f"Total samples: {len(df):,}")
     print(f"Stable trajectories: {df['stable'].sum():,}")
@@ -146,19 +197,23 @@ def generate_controller_dataset(controller, controller_name, env, initial_states
     """
     Generate dataset for a single controller.
     """
-    print(f"\n--- Generating {controller_name} Dataset ---")
     all_data = []
     stable_count = 0
     unstable_count = 0
+    early_termination_count = 0
 
     pbar = tqdm(initial_states, desc=f"{controller_name} trajectories")
 
     for traj_idx, initial_state in enumerate(pbar):
         # Simulate trajectory
-        states, immediate_costs, is_stable = simulate_trajectory(env, controller, initial_state, MAX_SIMULATION_STEPS)
+        states, immediate_costs, is_stable, stable_steps = simulate_trajectory(
+            env, controller, initial_state, MAX_SIMULATION_STEPS
+        )
 
         if is_stable:
             stable_count += 1
+            if stable_steps >= STABILITY_THRESHOLD:
+                early_termination_count += 1
         else:
             unstable_count += 1
 
@@ -168,10 +223,24 @@ def generate_controller_dataset(controller, controller_name, env, initial_states
 
             # Store all data points
             for i, state in enumerate(states):
-                all_data.append({'traj_idx': traj_idx, 'x_k': state[0], 'dx_k': state[1], 'a_k': state[2], 'da_k': state[3], 'cost_to_go': costs_to_go[i], 'stable': is_stable})
+                all_data.append({
+                    'traj_idx': traj_idx,
+                    'x_k': state[0],
+                    'dx_k': state[1],
+                    'a_k': state[2],
+                    'da_k': state[3],
+                    'cost_to_go': costs_to_go[i],
+                    'stable': is_stable,
+                    'early_terminated': stable_steps >= STABILITY_THRESHOLD
+                })
 
         # Update progress
-        pbar.set_postfix({'stable': stable_count, 'unstable': unstable_count, 'points': len(all_data)})
+        pbar.set_postfix({
+            'stable': stable_count,
+            'unstable': unstable_count,
+            'early_term': early_termination_count,
+            'points': len(all_data)
+        })
 
     pbar.close()
 
@@ -180,6 +249,7 @@ def generate_controller_dataset(controller, controller_name, env, initial_states
 
     # Analysis
     analyze_controller_dataset(df, controller_name)
+    print(f"  Early terminations: {early_termination_count}/{stable_count} stable trajectories")
 
     return df
 
@@ -205,27 +275,23 @@ def compare_controllers_datasets(controller_dfs):
 
 
 def main():
-    """Main dataset generation routine."""
-    print("=== Neural Network Training Dataset Generation ===")
-    print(f"Target directory: {DATASET_DIR}")
-    print(f"Number of trajectories: {NUM_TRAJECTORIES}")
-    print(f"Cost matrix:\n{P_MATRIX}")
+    time_str = datetime.now().strftime("%d%H%M%S")
+    run_dir = os.path.join(DATASET_DIR, time_str)
+    os.makedirs(run_dir, exist_ok=True)
 
-    # Create output directory
-    os.makedirs(DATASET_DIR, exist_ok=True)
+    # Save parameters to JSON file
+    save_parameters(run_dir, P_MATRIX, DELTA, STABILITY_THRESHOLD, STABILITY_TOLERANCE)
 
     # Sample initial conditions
-    print("\nSampling initial conditions...")
     initial_states = sample_initial_conditions(NUM_TRAJECTORIES)
 
     # Save initial conditions for reproducibility
     initials_df = pd.DataFrame(initial_states, columns=['x0', 'dx0', 'theta0', 'dtheta0'])
-    initials_path = os.path.join(DATASET_DIR, "initial_conditions.csv")
+    initials_path = os.path.join(run_dir, "initial_conditions.csv")
     initials_df.to_csv(initials_path, index=False)
-    print(f"Saved initial conditions to {initials_path}")
 
     # Initialize environment and controllers
-    env = InvePendulum(dt=DT)
+    env = InvePendulum(dt=DT, soft_wall=False)
     controllers = {
         "LQR": LQR(-2.91, -3.67, -25.43, -4.94),
         "SM": SlidingMode(env),
@@ -238,17 +304,15 @@ def main():
         df = generate_controller_dataset(controller, name, env, initial_states)
 
         # Save dataset
-        dataset_path = os.path.join(DATASET_DIR, f"{name.lower()}.csv")
+        dataset_path = os.path.join(run_dir, f"{name.lower()}.csv")
         df.to_csv(dataset_path, index=False)
-        print(f"Saved {name} dataset to {dataset_path}")
 
         controller_dfs[name] = df
 
     # Comparative analysis
     compare_controllers_datasets(controller_dfs)
 
-    print(f"\n=== Dataset generation completed ===")
-    print(f"All datasets saved to: {DATASET_DIR}")
+    print(f"All datasets saved to: {run_dir}")
 
 
 if __name__ == "__main__":

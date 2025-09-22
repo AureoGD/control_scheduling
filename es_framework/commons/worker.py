@@ -36,13 +36,13 @@ def init_worker(config: Dict[str, Any]):
                                **control_rule_cfg).reset_parameters(seed=45, last_layer_std=1)
 
 
-def run_worker(task_args: Tuple[int, np.ndarray]):
+def run_worker(task_args: Tuple[int, np.ndarray, list, float]):
     global sim_instance, control_rule
 
     if sim_instance is None:
         raise RuntimeError("Worker not initialized correctly.")
 
-    task_id, nn_params_flat, difficulty = task_args
+    task_id, nn_params_flat, initial_conditions, difficulty = task_args
 
     sim_instance.set_difficulty(difficulty)
 
@@ -52,18 +52,20 @@ def run_worker(task_args: Tuple[int, np.ndarray]):
 
         max_step = sim_instance.max_step
         cumulative_fitness = 0
-        for _ in range(10):
+        for initial_condition in initial_conditions:
             fitness = 0
-            obs, info = sim_instance.reset()
+            obs, info = sim_instance.reset(x0=initial_condition)
             for step in range(max_step):
                 action, _ = control_rule.predict(obs)
                 obs, reward, terminated, truncated, info = sim_instance.step(action)
                 fitness += reward
-                if terminated or truncated:
+                if terminated:
+                    break
+                if truncated:
                     break
             cumulative_fitness += fitness
 
-        return task_id, cumulative_fitness / 10
+        return task_id, cumulative_fitness / len(initial_conditions)
 
     except Exception as e:
         print(f"[Proc {os.getpid()}, Task {task_id}] ERROR in worker task: {e}")

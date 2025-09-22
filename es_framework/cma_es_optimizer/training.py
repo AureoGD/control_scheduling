@@ -13,13 +13,14 @@ from es_framework.commons.nn_parameters import flatten_nn_parameters, unflatten_
 from es_framework.commons.logger import TrainingLogger
 from es_framework.cma_es_optimizer.cma_es_optimizer import CMAESOptimizer
 from es_framework.commons.control_rule import ControlRule
+from es_framework.commons.initial_conditions import SelfAdaptingCurriculum
 
 # Set this to True to train using the discrete environment
 is_discrete = True
 
 # CMA-ES constants
 POPULATION_SIZE = 100
-GENERATIONS = 10000
+GENERATIONS = 1500
 SIGMA = 1.5
 ELITE_FRACTION = 0.5
 
@@ -55,24 +56,34 @@ def main():
     optimizer.set_initial_mean_params(flatten_nn_parameters(reference_model))
 
     num_generations = GENERATIONS
-    num_workers = min(15, POPULATION_SIZE)
+    num_workers = min(20, POPULATION_SIZE)
     logger.log_message(f"Starting CMA-ES training with {num_workers} persistent parallel workers.")
 
     pool = multiprocessing.Pool(processes=num_workers, initializer=partial(init_worker, config=config))
 
+    curriculum = SelfAdaptingCurriculum(min_difficulty=0.1, max_difficulty=1.0)
     try:
         for gen in range(1, num_generations + 1):
             population_params = optimizer.sample_population()
-            diff = 1
-            tasks = [(i, params, diff) for i, params in enumerate(population_params)]
+            initial_conditions = curriculum.get_initial_conditions(10)
+            diff = curriculum.current_difficulty
+            slope = curriculum.slope
+
+            tasks = [(i, params, initial_conditions,diff) for i, params in enumerate(population_params)]
             results = pool.map(run_worker, tasks)
             results.sort(key=lambda x: x[0])
             fitness_scores = [score for _, score in results]
 
             evaluated_population = list(zip(population_params, fitness_scores))
+
             optimizer.update_distribution(evaluated_population)
 
-            logger.log_generation(generation=gen, evaluated_population=evaluated_population, extra_metrics={"sigma": optimizer.sigma, "mean_stddev": np.mean(optimizer.D)})
+            curriculum.update_difficulty(evaluated_population)
+            logger.log_generation(generation=gen, evaluated_population=evaluated_population,
+                                  extra_metrics={"sigma": optimizer.sigma,
+                                                 "mean_stddev": np.mean(optimizer.D),
+                                                 "Difficulty": diff,
+                                                 "Slope": slope})
 
     except KeyboardInterrupt:
         logger.log_message("Training interrupted by user.")

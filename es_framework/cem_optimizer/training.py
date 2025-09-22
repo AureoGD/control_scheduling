@@ -13,6 +13,7 @@ from es_framework.commons.nn_parameters import flatten_nn_parameters, unflatten_
 from es_framework.commons.logger import TrainingLogger
 from es_framework.cem_optimizer.cem_optimizer import CEMOptimizer
 from es_framework.commons.control_rule import ControlRule
+from es_framework.commons.initial_conditions import SelfAdaptingCurriculum
 
 # --- Experiment Setup ---
 is_discrete = True
@@ -75,10 +76,12 @@ def main():
     cem.set_initial_mean_params(reference_model)
 
     # --- Parallel Setup ---
-    num_workers = min(15, POPULATION_SIZE)
+    num_workers = min(20, POPULATION_SIZE)
     logger.log_message(f"Starting CEM training with {num_workers} persistent parallel workers.")
     initializer_with_args = partial(init_worker, config=config)
     pool = multiprocessing.Pool(processes=num_workers, initializer=initializer_with_args)
+
+    curriculum = SelfAdaptingCurriculum(min_difficulty=0.1, max_difficulty=1.0)
 
     try:
         for gen in range(1, GENERATIONS + 1):
@@ -86,17 +89,26 @@ def main():
             population_params = cem.sample_population()
 
             # diff = difficulty_for_gen(gen, step_every=50, step_size=0.05, start=0.02, end=1.0)
-            diff = 1
+            # diff = 1
+            # curriculum = SelfAdaptingCurriculum(min_difficulty=0.1, max_difficulty=1.0)
+            
+            initial_conditions = curriculum.get_initial_conditions(10)
+            diff = curriculum.current_difficulty
+            slope = curriculum.slope
 
             # 2. Dispatch tasks
-            tasks = [(i, params, diff) for i, params in enumerate(population_params)]
+            tasks = [(i, params, initial_conditions,diff) for i, params in enumerate(population_params)]
             results = pool.map(run_worker, tasks)
             results.sort(key=lambda x: x[0])
             fitness_scores = [score for _, score in results]
             evaluated_population = list(zip(population_params, fitness_scores))
 
+            
+
             # 3. Update distribution
             cem.update_distribution(evaluated_population)
+            
+            curriculum.update_difficulty(evaluated_population)
 
             # 4. Log generation
             logger.log_generation(generation=gen,
@@ -105,6 +117,7 @@ def main():
                                       "Mean_StdDev_Params": float(getattr(cem, "mean_std_devs", float('nan'))),
                                       "Extra_Noise_Scale": getattr(cem, "epsilon", float('nan')),
                                       "Difficulty": diff,
+                                      "Slope": slope
                                   })
 
     except KeyboardInterrupt:

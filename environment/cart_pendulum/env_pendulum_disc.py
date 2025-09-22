@@ -25,6 +25,7 @@ class InvPendulumEnv(gym.Env):
                  dt=0.001,
                  max_step=500,
                  disturbance=False,
+                 noise=False,
                  rendering=False,
                  frame_rate=30,
                  sw_rule=None):
@@ -35,8 +36,9 @@ class InvPendulumEnv(gym.Env):
         self.max_step = max_step
         self.dt = dt
         self.disturbance = disturbance
+        self.noise = noise
 
-        self.inv_pendulum = InvePendulum(dt=self.dt, disturbance=self.disturbance, soft_wall=True)
+        self.inv_pendulum = InvePendulum(dt=self.dt, noise=self.noise, disturbance=self.disturbance, soft_wall=True)
 
         if self.rendering:
             self.pendulum_renderer = PendulumLiveRenderer(self.inv_pendulum)
@@ -60,7 +62,8 @@ class InvPendulumEnv(gym.Env):
         self.last_mode = None
 
         self.P = np.array([[2, 0, 0, 0], [0, 1, 0, 0], [0, 0, 5, 0], [0, 0, 0, 1]])
-        self.theta_max = np.pi / 2
+        self.max_vals = np.array([1.5, 2.75, 0.525, 1.5])
+        self.theta_max = np.pi/2
 
         self.force = 0
 
@@ -82,7 +85,8 @@ class InvPendulumEnv(gym.Env):
         self.ep_reward += reward
 
         # For Gym consistency
-        terminated = (abs(self.st[2]) > self.theta_max * 2) or self.health < 0
+        terminated = (abs(self.st[2]) > self.theta_max) or self.health < 0
+
         truncated = self.current_step >= self.max_step
 
         info = {}
@@ -114,22 +118,7 @@ class InvPendulumEnv(gym.Env):
         self._define_constants()
 
         if x0 is None:
-
-            # first test
-            x0 = self.scale_factor * np.array([
-                np.random.uniform(-1.5, 1.5),
-                np.random.uniform(-2.5, 2.5),
-                np.random.uniform(-0.5, 0.5),
-                np.random.uniform(-2.5, 2.5)
-            ])
-
-            # second test
-            # x0 = np.array([
-            #     np.random.uniform(-1.99, 1.99),
-            #     np.random.uniform(-2, 2),
-            #     np.random.uniform(-np.pi, np.pi),
-            #     np.random.uniform(-1, 1)
-            # ])
+            x0 = self._sample_x0_rad()
 
         self.st = self.inv_pendulum.reset(x0)
         state = self._norm(self.st)
@@ -163,13 +152,20 @@ class InvPendulumEnv(gym.Env):
         return np.array([x, dx, cos_a, sin_a, da]).reshape(5, )
 
     def _define_constants(self):
-        self.a_states = 1e-3
-        self.a_theta = 3e-4
-        self.a_center = 4e-4
-        self.a_prog = 5e-3
-        self.a_alive = 20e-3
-        self.a_force = 1e-3
-        self.a_pref = 0.015
+        self.a_states = 1e-3 * self.scale_factor
+        self.a_theta = 3e-4 * self.scale_factor
+        self.a_center = 4e-4 * self.scale_factor
+        self.a_prog = 5e-3 * self.scale_factor
+        self.a_alive = 20e-3* self.scale_factor
+        self.a_force = 1e-3* self.scale_factor
+        self.a_pref = 0.025* self.scale_factor
+        self.a_origin = 1.5e-3* self.scale_factor
+
+        sqrt_2ln2 = np.sqrt(2.0 * np.log(2.0))
+        x_tol = 0.5  # at |x|=x_tol -> 0.5 bonus
+        a_tol = 0.2  # at |a|=a_tol -> 0.5 bonus
+        self.sx = max(1e-9, x_tol / sqrt_2ln2)
+        self.sa = max(1e-9, a_tol / sqrt_2ln2)
 
         self.a_lqr = 10.0
         self.b_lqr = 7.0
@@ -180,7 +176,6 @@ class InvPendulumEnv(gym.Env):
         self.a_sm = 10
         self.b_sm = self.a_sm * 0.40
 
-        self.theta_max = 0.5
         self.v_ref = 0.6
         self.tau_pref = 0.5
 
@@ -199,7 +194,7 @@ class InvPendulumEnv(gym.Env):
     def _controller_scores(self, st):
 
         x, dx, a, da = map(float, st)
-        E_theta = abs(a) / self.theta_max
+        E_theta = abs(a) /self.inv_pendulum.a_max
         E_x = abs(x) / self.inv_pendulum.x_max
         E_v_raw = np.sqrt((dx / self.inv_pendulum.v_max)**2 + (da / self.inv_pendulum.da_max)**2)
         E_v = float(np.clip(E_v_raw / self.v_ref, 0.0, 1.0))
@@ -220,17 +215,22 @@ class InvPendulumEnv(gym.Env):
         r = 0
         r = self.a_alive
 
-        # V = float(st.T @ self.P @ st)
-        # r -= self.a_states * V
+        V = float(st.T @ self.P @ st)
+        r -= self.a_states * V
 
-        # if self.prev_V is None: self.prev_V = V
-        # r += self.a_prog * (self.prev_V - V)
-        # self.prev_V = V
+        if self.prev_V is None: self.prev_V = V
+        r += self.a_prog * (self.prev_V - V)
+        self.prev_V = V
 
         # center = (x * 10 / (self.inv_pendulum.x_max))**2
         # r += self.a_center if abs(x) < 0.025 else -self.a_center * center
 
         # r -= self.a_theta * abs(np.sin(a))**2
+
+        hx = np.exp(-0.5 * (x / self.sx)**2)
+        ha = np.exp(-0.5 * (a / self.sa)**2)
+
+        r += self.a_center * hx + self.a_theta * ha + self.a_origin * (hx * ha)
 
         scores = self._controller_scores(st)
         m = int(self.current_mode)
@@ -247,3 +247,19 @@ class InvPendulumEnv(gym.Env):
         # r -= self.a_force * np.clip(self.force, -self.inv_pendulum.f_max, self.inv_pendulum.f_max)**2
 
         return float(r)
+    
+    def _sample_x0_rad(self):
+        direction = np.random.normal(0, 1, 4)
+        norm = np.linalg.norm(direction)
+        if norm > 0:
+            direction = direction / norm
+        distance = np.random.uniform(0, self.scale_factor)
+        state = direction * distance * self.max_vals
+        x0 = np.array([
+            float(np.clip(state[0], -self.max_vals[0], self.max_vals[0])),
+            float(np.clip(state[1], -self.max_vals[1], self.max_vals[1])),
+            float(np.clip(state[2], -self.max_vals[2], self.max_vals[2])),
+            float(np.clip(state[3], -self.max_vals[3], self.max_vals[3]))
+        ])
+
+        return x0

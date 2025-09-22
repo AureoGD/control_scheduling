@@ -65,51 +65,100 @@ class SlidingMode():
         return u
 
 
-class SwingUp():
-    """
-    An energy-based swing-up controller.
-    It injects energy into the pendulum to swing it up to the top.
-    """
+# class SwingUp():
+#     """
+#     An energy-based swing-up controller.
+#     It injects energy into the pendulum to swing it up to the top.
+#     """
 
-    def __init__(self, pendulum_params, gain=1.7):
-        """
-        Args:
-            pendulum_params: An object or namespace with m, l, g, f_max.
-            gain (float): Energy control gain (tune as needed).
-        """
+#     def __init__(self, pendulum_params, gain=2.5):
+#         """
+#         Args:
+#             pendulum_params: An object or namespace with m, l, g, f_max.
+#             gain (float): Energy control gain (tune as needed).
+#         """
+#         self.mc = pendulum_params.mc
+#         self.mr = pendulum_params.mr
+#         self.l = pendulum_params.l
+#         self.g = pendulum_params.g
+#         self.f_max = pendulum_params.f_max
+#         self.J = pendulum_params.J
+
+#         # Moment of inertia of a rod pivoting at the base
+#         self.I = self.J + self.mr * self.l**2
+
+#         # Desired total energy at the upright position
+#         self.E_desired = self.mr * self.g * self.l
+
+#         # Gain for energy pump
+#         self.k = gain
+
+#     def update_control(self, states):
+#         """
+#         Compute swing-up force based on energy difference.
+#         Args:
+#             states (tuple): (x, dx, a, da)
+#         Returns:
+#             float: Force to apply to the cart.
+#         """
+#         _, _, a, da = states
+
+#         # Current pendulum energy
+#         E = 0.5 * self.I * da**2 - self.mr * self.g * self.l * cos(a)
+
+#         # Energy pumping law: sign synchronizes with swing phase
+#         u = -self.k * E * np.sign(-da)
+
+#         return u
+
+class SwingUp:
+    """
+    Energy-shaping swing-up with cart recentering.
+    Plug-and-play replacement for your current controller.
+    """
+    def __init__(self, pendulum_params,
+                 k_e=2.0,      # energy gain
+                 kx=0.6,       # recentering on x
+                 kdx=1.2,      # damping on dx
+                 friction_comp=True):
         self.mc = pendulum_params.mc
         self.mr = pendulum_params.mr
-        self.l = pendulum_params.l
-        self.g = pendulum_params.g
+        self.l  = pendulum_params.l
+        self.g  = pendulum_params.g
+        self.J  = pendulum_params.J
+        self.br = getattr(pendulum_params, "br", 0.0)
         self.f_max = pendulum_params.f_max
 
-        # Moment of inertia of a rod pivoting at the base
-        self.I = (1 / 3) * self.mr * self.l**2
+        # Inertia around pivot
+        self.I = self.J + self.mr * self.l**2
 
-        # Desired total energy at the upright position
-        self.E_desired = self.mr * self.g * self.l
-
-        # Gain for energy pump
-        self.k = gain
+        # Gains
+        self.k_e  = float(k_e)
+        self.kx   = float(kx)
+        self.kdx  = float(kdx)
+        self.friction_comp = bool(friction_comp)
 
     def update_control(self, states):
-        """
-        Compute swing-up force based on energy difference.
-        Args:
-            states (tuple): (x, dx, a, da)
-        Returns:
-            float: Force to apply to the cart.
-        """
-        _, _, a, da = states
+        x, dx, a, da = states
 
-        # Current pendulum energy
-        E = 0.5 * self.I * da**2 - self.mr * self.g * self.l * cos(a)
+        if a == np.pi:
+            F = 1
+        else:
+            # Upright-referenced energy: E* = 0 at upright rest
+            E = 0.5 * self.I * da**2 + self.mr * self.g * self.l * (1.0 - cos(a))
+            E_err = E  # target is 0
 
-        # Energy pumping law: sign synchronizes with swing phase
-        u = -self.k * E * np.sign(-da)
+            # Desired cart acceleration (energy pump + recentering)
+            # a_cart = - k_e * E_err * da * cos(a) - kx*x - kdx*dx
+            a_cart = - self.k_e * E_err * da * np.cos(a) - self.kx * x - self.kdx * dx
 
-        return u
+            # Map desired a_cart to force; add mild friction compensation
+            F = (self.mc + self.mr) * a_cart
+            if self.friction_comp:
+                F += self.br * dx
 
+        # Saturate to plant limit
+        return F
 
 class PendulumStatesPredict(InvePendulum):
 

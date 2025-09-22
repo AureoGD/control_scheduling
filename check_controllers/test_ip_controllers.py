@@ -5,8 +5,8 @@ from environment.cart_pendulum.pendulum_controllers import LQR, SlidingMode
 
 # --- Configuration ---
 SIMULATION_TIME = 5.0  # seconds
-DT = 0.002
-INITIAL_STATE = np.array([-1.5021892786026, -0.9675477147102356, -0.09422927349805832, 0.9383679032325745])
+DT = 0.001
+INITIAL_STATE = np.array([0, -0.0, -0.1, 0.0])
 
 # Cost function matrix and parameters
 p_mtx = np.array([[1.0, 0.0, 0.0, 0.0], [0.0, 1.0, 0.0, 0.0], [0.0, 0.0, 5.0, 0.0], [0.0, 0.0, 0.0, 1.0]])
@@ -67,7 +67,7 @@ def sim(initial_state, controller):
 if __name__ == '__main__':
     # Initialize Environment and All Controllers
     env = InvePendulum(dt=DT)
-    controllers = {"SM": SlidingMode(env), "VF": LQR(0, 30.92, 87.63, 20.40)}
+    controllers = {"LQR": LQR(-2.91, -3.67, -25.43, -4.94), "VF": LQR(0, -33.90, -153.30, -32.07)}
     # controllers = {"LQR": LQR(10.0, 12.60, 48.33, 9.09)}
 
     # Dictionary to store simulation data for each controller

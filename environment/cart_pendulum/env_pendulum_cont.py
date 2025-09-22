@@ -9,15 +9,18 @@ import time
 
 class InvPendulumEnv(gym.Env):
 
-    def __init__(self, env_id=None, dt=0.001, max_step=500, rendering=False, frame_rate=30):
+    def __init__(self, env_id=None, dt=0.001, max_step=500,disturbance=False,
+                 noise=False, rendering=False, frame_rate=30):
         super().__init__()
         self.env_id = env_id
         self.rendering = rendering
         self.frame_rate = frame_rate
         self.max_step = max_step
         self.dt = dt
+        self.disturbance = disturbance
+        self.noise = noise
 
-        self.inv_pendulum = InvePendulum(dt=self.dt)
+        self.inv_pendulum = InvePendulum(dt=self.dt, noise=self.noise, disturbance=self.disturbance)
 
         if self.rendering:
             self.pendulum_renderer = PendulumLiveRenderer(self.inv_pendulum)
@@ -30,6 +33,8 @@ class InvPendulumEnv(gym.Env):
         self.ep_reward = 0
         self.current_step = 0
         self.ep = 0
+
+        self.max_vals = np.array([1.5, 2.75, 0.525, 1.5])
 
         self.P = np.array([[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 5, 0], [0, 0, 0, 1]])
         self.theta_max = np.pi / 2
@@ -57,24 +62,20 @@ class InvPendulumEnv(gym.Env):
 
     #     return new_state, reward, terminated, truncated, info
     def step(self, action):
-        # --- 1) Action handling (robust to shapes) ---
         a = float(np.asarray(action).squeeze())
         a = np.clip(a, -1.0, 1.0)
         self.force = float(self.inv_pendulum.f_max) * a
 
-        # --- 2) Bookkeeping BEFORE horizon check to avoid off-by-one ---
         self.current_step += 1
 
-        # --- 3) Integrate dynamics ---
+   
         sys_sts = self.inv_pendulum.step_sim(self.force)
 
-        # (Optional) render at ~10 Hz of your configured frame_rate
         if self.rendering and (self.current_step % max(1, int(self.frame_rate / 10)) == 0 or self.current_step == 0):
             self.render()
-            # avoid negative sleeps if frame_rate/dt changes unexpectedly
             time.sleep(max(0.0, self.dt * self.frame_rate))
 
-        # --- 4) Safety: NaN/Inf guard (treat as failure) ---
+
         if not np.all(np.isfinite(sys_sts)):
             terminated = True
             truncated = False
@@ -84,47 +85,41 @@ class InvPendulumEnv(gym.Env):
                 "control_effort": self.force,
                 "episode_progress": self.current_step / self.max_step,
             }
-            reward = self._reward(sys_sts)  # or a specific catastrophic penalty if you prefer
+            reward = self._reward(sys_sts)
             new_state = self._norm(np.nan_to_num(sys_sts, copy=False))
             return new_state, reward, terminated, truncated, info
 
-        # --- 5) Termination / truncation logic (mutually exclusive) ---
+
         theta = float(sys_sts[2])
         terminated = (abs(theta) > self.theta_max)
 
         horizon_reached = (self.current_step >= self.max_step)
         truncated = (horizon_reached and not terminated)  # critical: do NOT truncate if already terminated
 
-        # --- 6) Reward after state update ---
         reward = self._reward(sys_sts)
 
-        # --- 7) Info dict (Gymnasium-friendly) ---
         info = {
             "raw_state": sys_sts,
             "control_effort": self.force,
             "episode_progress": self.current_step / self.max_step,  # optional, nice for TB
         }
         if truncated:
-            # Gymnasium time-limit convention; SB3 VecMonitor will expose this in final_info
             info["TimeLimit.truncated"] = True
             info["terminal_observation"] = sys_sts
 
-        # (Optional) If you have a separate success criterion:
-        # info["is_success"] = bool(success_condition)
 
-        # --- 8) Normalized observation out ---
         new_state = self._norm(sys_sts)
         return new_state, reward, terminated, truncated, info
 
     def _define_constants(self):
-        self.a_states = 5e-3
-        self.a_theta = 2.0e-3
-        self.a_center = 2.5e-3
-        self.a_origin = 1.5e-3
-        self.a_prog = 3e-3
-        self.a_force = 2.5e-4
-        self.a_alive = 8e-3
-        self.a_df = 1.5e-4
+        self.a_states = 5e-3 * self.scale_factor
+        self.a_theta = 2.0e-3 * self.scale_factor
+        self.a_center = 2.5e-3 * self.scale_factor
+        self.a_origin = 1.5e-3 * self.scale_factor
+        self.a_prog = 3e-3 * self.scale_factor
+        self.a_force = 2.5e-4 * self.scale_factor
+        self.a_alive = 8e-3 * self.scale_factor
+        self.a_df = 1.5e-4 * self.scale_factor
 
         sqrt_2ln2 = np.sqrt(2.0 * np.log(2.0))
         x_tol = 0.5  # at |x|=x_tol -> 0.5 bonus
@@ -154,7 +149,7 @@ class InvPendulumEnv(gym.Env):
             #     np.random.uniform(-0.5, 0.5),
             #     np.random.uniform(-2.5, 2.5)
             # ])
-            x0 = self._sample_x0(self.scale_factor)
+            x0 = self._sample_x0_rad()
         state = self._norm(self.inv_pendulum.reset(x0))
         if self.rendering:
             self.pendulum_renderer.init_live_render()
@@ -229,5 +224,21 @@ class InvPendulumEnv(gym.Env):
         # Keep theta inside termination margin
         theta_lim = min(self.theta_max * 0.95, R[2])
         x0[2] = np.clip(x0[2], -theta_lim, theta_lim)
+
+        return x0
+
+    def _sample_x0_rad(self):
+        direction = np.random.normal(0, 1, 4)
+        norm = np.linalg.norm(direction)
+        if norm > 0:
+            direction = direction / norm
+        distance = np.random.uniform(0, self.scale_factor)
+        state = direction * distance * self.max_vals
+        x0 = np.array([
+            float(np.clip(state[0], -self.max_vals[0], self.max_vals[0])),
+            float(np.clip(state[1], -self.max_vals[1], self.max_vals[1])),
+            float(np.clip(state[2], -self.max_vals[2], self.max_vals[2])),
+            float(np.clip(state[3], -self.max_vals[3], self.max_vals[3]))
+        ])
 
         return x0

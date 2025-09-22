@@ -14,16 +14,16 @@ def run_test():
     # env = InvPendulumEnv(env_id=0, max_step=500, rendering=True)
 
     # Reset environment
-    # obs, info = env.reset(x0=[-1.0, -0.46652448177337646, -0.09152679145336151, -2.5])
-    x0 = np.array([
-        np.random.uniform(-1.5, 1.5),
-        np.random.uniform(-2.5, 2.5),
-        np.random.uniform(-0.5, 0.5),
-        np.random.uniform(-2.5, 2.5)
-    ],
-                  dtype=np.float32)
+    obs, info = env.reset(x0=[0.0,0.0,0.5,0.0])
+    # x0 = np.array([
+    #     np.random.uniform(-1.5, 1.5),
+    #     np.random.uniform(-2.5, 2.5),
+    #     np.random.uniform(-0.5, 0.5),
+    #     np.random.uniform(-2.5, 2.5)
+    # ],
+    #               dtype=np.float32)
 
-    obs, info = env.reset(x0=x0)
+    # obs, info = env.reset(x0=x0)
 
     # obs, info = env.reset(x0=[0, 0, 0.1, 0])
     done = False
@@ -42,14 +42,15 @@ def run_test():
     ep = 1
     i = 0
     while not done:
-        action = env.action_space.sample()  # Random action for now
-        # if i < 70:
+        # action = env.action_space.sample()  # Random action for now
+        # if i < 20:
         #     action = 0
-        # elif i >= 70 and i < 200:
+        # elif i >=20 and i < 150:
         #     action = 1
         # else:
         #     action = 2
-        action = 0
+        # # action = 0
+        action =2
         obs, reward, terminated, truncated, info = env.step(action)
         history['states'].append(obs.copy())
         f = float(info.get("control_effort", np.nan))
