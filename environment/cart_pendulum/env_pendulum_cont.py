@@ -39,28 +39,6 @@ class InvPendulumEnv(gym.Env):
         self.P = np.array([[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 5, 0], [0, 0, 0, 1]])
         self.theta_max = np.pi / 2
 
-    # def step(self, action):
-    #     self.current_step += 1
-    #     self.force = self.inv_pendulum.f_max * np.clip(action[0], -1, 1)
-    #     sys_sts = self.inv_pendulum.step_sim(self.force)
-    #     new_state = self._norm(sys_sts)
-    #     if self.rendering and (self.current_step % (self.frame_rate / 10) == 0 or self.current_step == 0):
-    #         self.render()
-    #         time.sleep(self.dt * self.frame_rate)
-
-    #     reward = self._reward(sys_sts)
-
-    #     terminated = (abs(sys_sts[2]) > self.theta_max)
-    #     truncated = self.current_step >= self.max_step
-
-    #     info = {}
-    #     if truncated and not terminated:
-    #         info["TimeLimit.truncated"] = True
-    #         info["terminal_observation"] = sys_sts
-    #     info["raw_state"] = sys_sts
-    #     info["control_effort"] = self.force
-
-    #     return new_state, reward, terminated, truncated, info
     def step(self, action):
         a = float(np.asarray(action).squeeze())
         a = np.clip(a, -1.0, 1.0)
@@ -137,20 +115,14 @@ class InvPendulumEnv(gym.Env):
     def set_difficulty(self, value: float):
         self.scale_factor = float(value)
 
-    def reset(self, *, seed=None, options=None, x0=None):
+    def reset(self, *, seed=None, options=None, x0=None, disturb=None):
         super().reset(seed=seed)
         self.ep += 1
         ep_r = self.ep_reward
         self._define_constants()
         if x0 is None:
-            # x0 = self.scale_factor * np.array([
-            #     np.random.uniform(-1.5, 1.5),
-            #     np.random.uniform(-2.5, 2.5),
-            #     np.random.uniform(-0.5, 0.5),
-            #     np.random.uniform(-2.5, 2.5)
-            # ])
             x0 = self._sample_x0_rad()
-        state = self._norm(self.inv_pendulum.reset(x0))
+        state = self._norm(self.inv_pendulum.reset(x0, disturb=disturb))
         if self.rendering:
             self.pendulum_renderer.init_live_render()
             self.render()
@@ -187,11 +159,6 @@ class InvPendulumEnv(gym.Env):
         r += self.a_prog * (self.prev_V - V)
         self.prev_V = V
 
-        # center = (x * 10 / (self.inv_pendulum.x_max))**2
-        # r += self.a_center if abs(x) < 0.025 else -self.a_center * center
-
-        # r += self.a_theta if abs(a) < 0.025 else -self.a_theta * (np.sin(a)**2)
-
         hx = np.exp(-0.5 * (x / self.sx)**2)
         ha = np.exp(-0.5 * (a / self.sa)**2)
 
@@ -200,12 +167,6 @@ class InvPendulumEnv(gym.Env):
         force = np.clip(self.force, -self.inv_pendulum.f_max, self.inv_pendulum.f_max)
 
         r -= self.a_force * force**2
-
-        # if self.prev_force is None: self.prev_force = force
-
-        # df = force - self.prev_force
-
-        # r -= self.a_df * df**2
 
         return float(r)
 

@@ -16,18 +16,30 @@ from es_framework.commons.control_rule import ControlRule
 from es_framework.commons.initial_conditions import SelfAdaptingCurriculum
 
 # --- Experiment Setup ---
-is_discrete = True
+is_discrete = False
+
+# # --- CEM Hyperparameters ---
+# POPULATION_SIZE = 100
+# GENERATIONS = 1500
+# ELITE_FRACTION = 0.25
+# INITIAL_STD_DEV = 1.5
+# EXTRA_NOISE_SCALE = 0.5
+# NOISE_DECAY_FACTOR = 0.99
+# MIN_STD_DEV = 0.001
+# UPDATE_RULE = "standard"  # "standard" or "cmaes_type"
+# ELITE_WEIGHTING = "uniform"  # "uniform" or "logarithmic"
 
 # --- CEM Hyperparameters ---
 POPULATION_SIZE = 100
-GENERATIONS = 1500
+GENERATIONS = 2500
 ELITE_FRACTION = 0.25
-INITIAL_STD_DEV = 1.5
+INITIAL_STD_DEV = 2.5
 EXTRA_NOISE_SCALE = 0.5
 NOISE_DECAY_FACTOR = 0.99
 MIN_STD_DEV = 0.001
 UPDATE_RULE = "standard"  # "standard" or "cmaes_type"
 ELITE_WEIGHTING = "uniform"  # "uniform" or "logarithmic"
+
 
 # --- Neural Net Setup ---
 fc1_dim = 64
@@ -81,19 +93,18 @@ def main():
     initializer_with_args = partial(init_worker, config=config)
     pool = multiprocessing.Pool(processes=num_workers, initializer=initializer_with_args)
 
-    curriculum = SelfAdaptingCurriculum(min_difficulty=0.1, max_difficulty=1.0)
+    curriculum = SelfAdaptingCurriculum(min_difficulty=0.1, max_difficulty=1.0, use_ema_variance=True)
 
     try:
         for gen in range(1, GENERATIONS + 1):
             # 1. Sample population
             population_params = cem.sample_population()
 
-            # diff = difficulty_for_gen(gen, step_every=50, step_size=0.05, start=0.02, end=1.0)
-            # diff = 1
-            # curriculum = SelfAdaptingCurriculum(min_difficulty=0.1, max_difficulty=1.0)
-            
+            diff = difficulty_for_gen(gen, step_every=100, step_size=0.05, start=0.02, end=1.0)
+                 # curriculum = SelfAdaptingCurriculum(min_difficulty=0.1, max_difficulty=1.0)
+            curriculum.current_difficulty = diff
             initial_conditions = curriculum.get_initial_conditions(10)
-            diff = curriculum.current_difficulty
+            
             slope = curriculum.slope
 
             # 2. Dispatch tasks

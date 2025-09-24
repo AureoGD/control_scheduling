@@ -6,26 +6,27 @@ from tqdm import tqdm
 from stable_baselines3 import A2C, PPO, DQN
 from es_framework.commons.control_rule import ControlRule
 
-# Change only here !
-IS_DISCRETE = True
-GENERATE_X0 = True
+
+GENERATE_X0 = False
 RENDERING = False
 NOISE = False
-DISTURBANCE = True
-NUM_SAMPLES = 10
+DISTURBANCE = False
+NUM_SAMPLES = 350
 
-MODEL_PATH = "models/cem/D_15165010/cem_model_final_mean.pth" #cem_model_final_mean
-# MODEL_PATH = "models/dqn/D_15150819/final_model.zip" #final_model
-MODEL_NAME = "cem"  # 'cmaes', 'ppo', 'a2c', 'dqn'
-EXP_ID = "exp2"
+IS_DISCRETE = False
+MODEL_NAME = "cem"   # 'cmaes', 'ppo', 'a2c', 'dqn'
+EXP_ID = "exp1"
 
-# -------------------------------------------
+
+FORMAT = "pth" if MODEL_NAME in ['cem', 'cmaes'] else 'zip'
+PREFIX = "d" if IS_DISCRETE else "c"
+MODEL_PATH = f"models/final_models/{MODEL_NAME}_{PREFIX}/final_model.{FORMAT}"
+
 SIM_TIME = 5
 DT = 0.001
 MAX_STEP = int(SIM_TIME / DT)
-# DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 DEVICE = 'cpu'
-ROOT = os.path.dirname(os.path.abspath(__file__))  # .../eval_models
+ROOT = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(ROOT, "eval_data")
 os.makedirs(DATA_DIR, exist_ok=True)
 IC_PATH = os.path.join(DATA_DIR, "initial_conditions.csv")
@@ -33,13 +34,11 @@ PREFIX = "d" if IS_DISCRETE else "c"
 OUT_FILE = f"{PREFIX}_{MODEL_NAME}_data_{EXP_ID}.csv"
 OUT_PATH = os.path.join(DATA_DIR, OUT_FILE)
 
-
 def write_initial_conditions(path, X0):
     with open(path, "w", newline="") as f:
         w = csv.writer(f)
         w.writerow(["x", "xdot", "theta", "thetadot"])
         w.writerows(X0.tolist())
-
 
 def read_initial_conditions(path):
     arr = np.loadtxt(path, delimiter=",", dtype=np.float32, skiprows=1)
@@ -47,24 +46,46 @@ def read_initial_conditions(path):
         arr = arr[None, :]
     return arr
 
+def generate_disturbance(rng, max_steps, dt):
+    """Generate a single disturbance: (instant, magnitude, steps_duration)"""
+    instant = rng.integers(int(0.5*max_steps), int(0.7*max_steps))  # Between 0.2s and 80% of sim time
+    magnitude = rng.uniform(-4, 4)
+    steps_duration = rng.integers(int(0.1/dt), int(0.3/dt))  # 0.1-0.5 seconds duration
+    return (instant, magnitude, steps_duration)
 
+# Generate reproducible initial conditions
 if GENERATE_X0:
-    rng = np.random.default_rng(55)
+    rng = np.random.default_rng(55) # exp1
+    # rng = np.random.default_rng(13) # exp2
     X0 = []
     for _ in range(NUM_SAMPLES):
         x0 = np.array([
             np.random.uniform(-1.0, 1.0),
             np.random.uniform(-2.5, 2.5),
             np.random.uniform(-0.5, 0.5),
-            np.random.uniform(-1.5, 1.5)
-        ],
-                            dtype=np.float32)
+            np.random.uniform(-1.25, 1.25)
+        ], dtype=np.float32)
+        # x0 = np.array([
+        #     np.random.uniform(-1.0, 1.0),
+        #     np.random.uniform(-2.5, 2.5),
+        #     np.random.uniform(-0.5, 0.5),
+        #     np.random.uniform(-1.25, 1.25)
+        # ], dtype=np.float32)
         X0.append(x0)
     X0 = np.stack(X0, axis=0)
     write_initial_conditions(IC_PATH, X0)
 else:
     X0 = read_initial_conditions(IC_PATH)
 
+# Generate reproducible disturbances for each test case
+DISTURBANCES = []
+if DISTURBANCE:
+    rng = np.random.default_rng(66)  # Different seed for disturbances
+    for _ in range(NUM_SAMPLES):
+        disturb = generate_disturbance(rng, MAX_STEP, DT)
+        DISTURBANCES.append(disturb)
+
+# Initialize environment
 if IS_DISCRETE:
     from environment.cart_pendulum.env_pendulum_disc import InvPendulumEnv
     from scheduller_rules.schl_rule1 import SchedullerRule
@@ -74,7 +95,7 @@ else:
     from environment.cart_pendulum.env_pendulum_cont import InvPendulumEnv
     env = InvPendulumEnv(env_id=0, rendering=RENDERING, noise=NOISE, disturbance=DISTURBANCE)
 
-# ---- Load model ----
+# Load model
 if MODEL_NAME in ['cem', 'cmaes']:
     saved_state_dict = torch.load(MODEL_PATH, map_location=DEVICE, weights_only=False)
     output_dim = env.action_space.n if IS_DISCRETE else env.action_space.shape[0]
@@ -92,6 +113,7 @@ elif MODEL_NAME == 'dqn':
 else:
     raise ValueError(f"Unknown MODEL_NAME: {MODEL_NAME}")
 
+# Run evaluation
 with open(OUT_PATH, "w", newline="") as f:
     w = csv.writer(f)
     w.writerow([
@@ -100,7 +122,10 @@ with open(OUT_PATH, "w", newline="") as f:
     ])
 
     for ic_id, x0 in enumerate(tqdm(X0, desc="Initial conditions")):
-        obs, info = env.reset(x0=x0)
+        # Pass disturbance parameters to reset
+        disturb_params = DISTURBANCES[ic_id] if DISTURBANCE else None
+        obs, info = env.reset(x0=x0, disturb=disturb_params)
+        
         done = False
         step = 0
         total_reward = 0.0
@@ -108,10 +133,11 @@ with open(OUT_PATH, "w", newline="") as f:
         while not done and step < MAX_STEP:
             if IS_DISCRETE:
                 action, _ = model.predict(obs, deterministic=True)
-                mode = int(action)  # keep mode = chosen discrete action
+                mode = int(action)
             else:
                 action, _ = model.predict(obs, deterministic=True)
                 mode = -1
+                
             obs_next, r, terminated, truncated, info = env.step(action)
             done = bool(terminated) or bool(truncated)
 
@@ -124,15 +150,13 @@ with open(OUT_PATH, "w", newline="") as f:
             control_effort = float(np.clip(info.get("control_effort", np.nan), -env.inv_pendulum.f_max, env.inv_pendulum.f_max))
             total_reward += float(r)
 
-            # Optional safety cutoff
-            if theta >= np.pi / 2:
+            # Safety cutoff
+            if abs(theta) >= np.pi / 2:
                 done = True
 
             w.writerow([
                 ic_id, step, step * DT, x, xdot, theta, thetadot, mode, control_effort,
-                float(r), total_reward,
-                int(terminated),
-                int(truncated)
+                float(r), total_reward, int(terminated), int(truncated)
             ])
 
             obs = obs_next

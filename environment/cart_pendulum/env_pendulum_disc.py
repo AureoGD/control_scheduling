@@ -104,7 +104,7 @@ class InvPendulumEnv(gym.Env):
     def set_difficulty(self, value: float):
         self.scale_factor = float(value)
 
-    def reset(self, *, seed=None, options=None, x0=None):
+    def reset(self, *, seed=None, options=None, x0=None, disturb=None):
         super().reset(seed=seed)
         self.ep += 1
         ep_r = self.ep_reward
@@ -120,7 +120,7 @@ class InvPendulumEnv(gym.Env):
         if x0 is None:
             x0 = self._sample_x0_rad()
 
-        self.st = self.inv_pendulum.reset(x0)
+        self.st = self.inv_pendulum.reset(x0, disturb=disturb)
         state = self._norm(self.st)
 
         if self.rendering:

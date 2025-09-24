@@ -6,9 +6,11 @@ import matplotlib.pyplot as plt
 from datetime import datetime
 
 # ---------------- Configuration ----------------
-ALG = "dqn"
-DISCREATE = True   
-EXP = "exp2"
+ALG = "cem"
+DISCREATE = False   
+EXP = "exp1"
+# ------------------------------------------------
+
 PREFIX = "d" if DISCREATE else "c"
 FILE_PATH = f"rate_models/eval_data/{PREFIX}_{ALG}_data_{EXP}.csv"
 
@@ -211,8 +213,8 @@ summary_row = {
 
 columns_order = [
     "key", "exp",
-    "mean_reward","std_reward","reward_CI","energy_CI","fail_percent",
-    "mean_energy","median_reward","min_reward","max_reward",
+    "mean_reward","std_reward","reward_CI","mean_energy","energy_CI","fail_percent",
+    "median_reward","min_reward","max_reward",
     "reward_low_CI","reward_high_CI","median_energy",
     "min_energy","max_energy","energy_low_CI","energy_high_CI","num_fails"
 ]

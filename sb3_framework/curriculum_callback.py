@@ -1,46 +1,3 @@
-# from stable_baselines3.common.callbacks import BaseCallback
-# import numpy as np
-
-# class CurriculumCallback(BaseCallback):
-
-#     def __init__(self, total_timesteps: int, step=0.025, ramp_portion=0.80):
-#         super().__init__()
-#         self.T = int(total_timesteps)
-#         self.step = float(step)  # e.g., 0.025
-#         self.ramp = float(ramp_portion)  # fraction of training to ramp
-#         self.last = None
-#         self.venv = None
-
-#     def _on_training_start(self) -> None:
-#         self.venv = self.model.get_env()
-#         self._apply_if_changed(force=True)
-
-#     def _current_diff(self) -> float:
-#         # progress normalized to the ramp window [0,1]
-#         denom = max(1, int(self.ramp * self.T))
-#         p = min(1.0, self.num_timesteps / denom)
-#         # floor bucket index
-#         k = int(np.floor(p / self.step))
-#         # add +1 so we start at 1*step = 0.025 instead of 0.0
-#         d = min(1.0, (k + 1) * self.step)
-#         return float(d)
-
-#     def _apply_if_changed(self, force=False):
-#         d = self._current_diff()
-#         if force or (self.last is None) or (d != self.last):
-#             for env in self.venv.envs:
-#                 env.unwrapped.set_difficulty(d)
-#             self.last = d
-#             self.logger.record("curriculum/scale_factor", d)
-
-#     def _on_step(self) -> bool:
-#         self._apply_if_changed(force=False)
-#         return True
-# sb3_framework/curriculum_callback.py
-
-# sb3_framework/curriculum_callback.py
-# sb3_framework/curriculum_callback.py
-
 from __future__ import annotations
 from typing import Deque, Optional, Dict, Any, List
 from collections import deque
@@ -49,16 +6,6 @@ from stable_baselines3.common.callbacks import BaseCallback
 
 
 class CurriculumByPerformance(BaseCallback):
-    """
-    Performance-driven curriculum with:
-      • Robust truncation detection (flag OR episode_len ≈ horizon)
-      • One-step hysteresis floor (can fall back at most one level)
-      • Minimum residency per level (e.g., 5% of total timesteps)
-
-    Works with PPO/A2C/DQN (vectorized).
-    Env must implement: env.unwrapped.set_difficulty(scale: float)
-    Expects Gymnasium step signature: (obs, reward, terminated, truncated, info)
-    """
 
     def __init__(
         self,
@@ -164,12 +111,6 @@ class CurriculumByPerformance(BaseCallback):
         self._log_scalars()
 
     def _on_step(self) -> bool:
-        """
-        Called after each env step. We:
-          1) Increment all per-env episode lengths.
-          2) For envs where `dones[i]` is True, classify truncation vs. failure (or success).
-          3) Decide promotions/demotions subject to residency + cooldown.
-        """
         if self._ep_len is None:
             return True
 
@@ -202,21 +143,14 @@ class CurriculumByPerformance(BaseCallback):
                 elif self._has_success_flag(finfo):
                     self._window.append(0)
                     classified = True
-                    if self.debug_print:
-                        print(f"[Curriculum] SUCCESS (flag) env={i}, len={self._ep_len[i]}")
-
-                # Fallback: use length vs horizon
+                    
                 if not classified:
                     H = self._horizon
                     if H is not None and abs(int(self._ep_len[i]) - int(H)) <= 1:
                         self._window.append(+1)
-                        if self.debug_print:
-                            print(f"[Curriculum] TRUNC (len≈H) env={i}, len={self._ep_len[i]}, H={H}")
                     else:
                         self._window.append(-1)
-                        if self.debug_print:
-                            print(f"[Curriculum] FAIL (len={self._ep_len[i]}) env={i} (no flags)")
-
+                        
                 # reset this env's counter for next episode
                 self._ep_len[i] = 0
 

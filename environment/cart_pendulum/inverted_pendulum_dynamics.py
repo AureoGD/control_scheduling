@@ -78,16 +78,21 @@ class InvePendulum():
 
     def step_sim(self, force):
         force = np.clip(force, -self.f_max, self.f_max)
-        
+        if self.predefined_disturb and self.n >= self.instant and self.int_disturb == 0:
+            self.f_dist = self.magnitude
+            self.int_disturb = self.steps_duration
         for _ in range(10):
             self.n += 1
             x, dx, a, da = self.x, self.dx, self.a, self.da
 
-            # Handle disturbances
-            if self.disturb and random.random() < 0.05 and self.n > 2500:
-                self.disturb = False
-                self._disturbance()
+            # # Handle disturbances
+            # if self.disturb and random.random() < 0.05 and self.n > 2500:
+            #     self.disturb = False
+            #     self._disturbance()
 
+            # f_dis = self.f_dist if self.int_disturb > 0 else 0
+            # if self.int_disturb > 0:
+            #     self.int_disturb -= 1
             f_dis = self.f_dist if self.int_disturb > 0 else 0
             if self.int_disturb > 0:
                 self.int_disturb -= 1
@@ -168,7 +173,7 @@ class InvePendulum():
         elif self.disturb_detected and abs(self.st_[1] - self.dx) < 0.005 and abs(self.st_[3] - self.da) < 0.005:
             self.disturb_detected = False
 
-    def reset(self, initial_state=(0.0, 0.0, 0.0, 0.0)):
+    def reset(self, initial_state=(0.0, 0.0, 0.0, 0.0), disturb=None):
         """
         Resets the pendulum's state to a specified initial condition.
 
@@ -181,6 +186,17 @@ class InvePendulum():
         """
         self.n = 0
         self.disturb = self.disturbance
+        self.f_dist = 0
+        self.int_disturb = 0
+        self.disturb_detected = False
+
+            # Set predefined disturbance if provided
+        if disturb is not None:
+            self.instant, self.magnitude, self.steps_duration = disturb
+            # Store as attributes for later use in step_sim
+            self.predefined_disturb = disturb
+        else:
+            self.predefined_disturb = None
 
 
         self.x, self.dx, self.a, self.da = initial_state
